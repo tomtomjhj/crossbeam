@@ -4,6 +4,7 @@ use core::mem;
 use atomic::Shared;
 use collector::Collector;
 use deferred::Deferred;
+use garbage::Garbage;
 use internal::Local;
 
 /// A guard that keeps the current thread pinned.
@@ -70,6 +71,15 @@ pub struct Guard {
 }
 
 impl Guard {
+    #[inline]
+    unsafe fn defer_garbage(&self, garbage: Garbage) {
+        if let Some(local) = self.local.as_ref() {
+            local.defer(garbage, self);
+        } else {
+            garbage.dispose();
+        }
+    }
+
     /// Stores a function so that it can be executed at some point after all currently pinned
     /// threads get unpinned.
     ///
@@ -87,6 +97,7 @@ impl Guard {
     /// executed immediately.
     ///
     /// [`unprotected`]: fn.unprotected.html
+    #[inline]
     pub fn defer<F, R>(&self, f: F)
     where
         F: FnOnce() -> R,
@@ -191,9 +202,9 @@ impl Guard {
     where
         F: FnOnce() -> R,
     {
-        if let Some(local) = self.local.as_ref() {
-            local.defer(Deferred::new(move || drop(f())), self);
-        }
+        self.defer_garbage(Garbage::Deferred {
+            inner: Deferred::new(move || drop(f())),
+        });
     }
 
     /// Stores a destructor for an object so that it can be deallocated and dropped at some point
@@ -267,7 +278,14 @@ impl Guard {
     ///
     /// [`unprotected`]: fn.unprotected.html
     pub unsafe fn defer_destroy<T>(&self, ptr: Shared<T>) {
-        self.defer_unchecked(move || ptr.into_owned());
+        unsafe fn dtor<T>(data: usize) {
+            drop(Shared::from(data as *const T).into_owned());
+        }
+
+        self.defer_garbage(Garbage::Destroy {
+            data: ptr.as_raw() as usize,
+            dtor: dtor::<T>,
+        });
     }
 
     /// Clears up the thread-local cache of deferred functions by executing them or moving into the

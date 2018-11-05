@@ -28,17 +28,20 @@ impl<T> Stack<T> {
     }
 
     /// Pushes a value on top of the stack.
-    pub fn push(&self, t: T, guard: &Guard) {
+    pub fn push(&self, t: T) {
         let mut n = Owned::new(Node {
             data: ManuallyDrop::new(t),
             next: Atomic::null(),
         });
 
         loop {
-            let head = self.head.load(Relaxed, guard);
+            let head = self.head.load(Relaxed, unsafe { unprotected() });
             n.next.store(head, Relaxed);
 
-            match self.head.compare_and_set(head, n, Release, guard) {
+            match self
+                .head
+                .compare_and_set(head, n, Release, unsafe { unprotected() })
+            {
                 Ok(_) => break,
                 Err(e) => n = e.new,
             }
@@ -62,8 +65,9 @@ impl<T> Stack<T> {
                         .is_ok()
                     {
                         unsafe {
+                            let data = ManuallyDrop::into_inner(ptr::read(&(*h).data));
                             guard.defer_destroy(head);
-                            return Some(ManuallyDrop::into_inner(ptr::read(&(*h).data)));
+                            return Some(data);
                         }
                     }
                 }
@@ -94,8 +98,8 @@ mod test {
             for _ in 0..10 {
                 scope.spawn(|_| {
                     for i in 0..10_000 {
+                        stack.push(i);
                         let guard = pin();
-                        stack.push(i, &guard);
                         assert!(stack.try_pop(&guard).is_some());
                     }
                 });

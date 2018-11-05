@@ -5,11 +5,12 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Deref, DerefMut};
-use core::ptr;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crossbeam_utils::atomic::AtomicConsume;
+
 use guard::Guard;
+use tag::*;
 
 /// Given ordering for the success case in a compare-exchange operation, returns the strongest
 /// appropriate ordering for the failure case.
@@ -85,34 +86,6 @@ impl CompareAndSetOrdering for (Ordering, Ordering) {
     fn failure(&self) -> Ordering {
         self.1
     }
-}
-
-/// Panics if the pointer is not properly unaligned.
-#[inline]
-fn ensure_aligned<T>(raw: *const T) {
-    assert_eq!(raw as usize & low_bits::<T>(), 0, "unaligned pointer");
-}
-
-/// Returns a bitmask containing the unused least significant bits of an aligned pointer to `T`.
-#[inline]
-fn low_bits<T>() -> usize {
-    (1 << mem::align_of::<T>().trailing_zeros()) - 1
-}
-
-/// Given a tagged pointer `data`, returns the same pointer, but tagged with `tag`.
-///
-/// `tag` is truncated to fit into the unused bits of the pointer to `T`.
-#[inline]
-fn data_with_tag<T>(data: usize, tag: usize) -> usize {
-    (data & !low_bits::<T>()) | (tag & low_bits::<T>())
-}
-
-/// Decomposes a tagged pointer `data` into the pointer and the tag.
-#[inline]
-fn decompose_data<T>(data: usize) -> (*mut T, usize) {
-    let raw = (data & !low_bits::<T>()) as *mut T;
-    let tag = data & low_bits::<T>();
-    (raw, tag)
 }
 
 /// An atomic pointer that can be safely shared between threads.
@@ -642,7 +615,8 @@ impl<T> Pointer<T> for Owned<T> {
     /// Panics if the data is zero in debug mode.
     #[inline]
     unsafe fn from_usize(data: usize) -> Self {
-        debug_assert!(data != 0, "converting zero into `Owned`");
+        let (ptr, _) = decompose_data::<T>(data);
+        debug_assert!(!ptr.is_null(), "converting zero into `Owned`");
         Owned {
             data: data,
             _marker: PhantomData,
@@ -1073,10 +1047,7 @@ impl<'g, T> Shared<'g, T> {
     /// }
     /// ```
     pub unsafe fn into_owned(self) -> Owned<T> {
-        debug_assert!(
-            self.as_raw() != ptr::null(),
-            "converting a null `Shared` into `Owned`"
-        );
+        debug_assert!(!self.is_null(), "converting a null `Shared` into `Owned`");
         Owned::from_usize(self.data)
     }
 

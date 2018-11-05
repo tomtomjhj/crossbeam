@@ -6,9 +6,10 @@ use core::ptr;
 
 /// Number of words a piece of `Data` can hold.
 ///
-/// Three words should be enough for the majority of cases. For example, you can fit inside it the
-/// function pointer together with a fat pointer representing an object that needs to be destroyed.
-const DATA_WORDS: usize = 3;
+/// Two words should be enough for the majority of cases. For example, you can fit inside it the
+/// function pointer together with a (thin) pointer representing an object that needs to be
+/// destroyed.
+const DATA_WORDS: usize = 2;
 
 /// Some space to keep a `FnOnce()` object on the stack.
 type Data = [usize; DATA_WORDS];

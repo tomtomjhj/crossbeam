@@ -146,10 +146,7 @@ mod tests {
                 guard.defer_destroy(a);
 
                 assert!(!(*(*guard.local).bag.get()).is_empty());
-
-                while !(*(*guard.local).bag.get()).is_empty() {
-                    guard.flush();
-                }
+                guard.flush();
             }
         }
     }
@@ -181,11 +178,12 @@ mod tests {
                     for _ in 0..500_000 {
                         let guard = &handle.pin();
 
-                        let before = collector.global.epoch.load(Ordering::Relaxed);
+                        let before = collector.global.status.load(Ordering::Relaxed, &guard);
                         collector.global.collect(guard);
-                        let after = collector.global.epoch.load(Ordering::Relaxed);
+                        let after = collector.global.status.load(Ordering::Relaxed, &guard);
 
-                        assert!(after.wrapping_sub(before) <= 2);
+                        let diff = after.tag().wrapping_sub(before.tag()) % 8;
+                        assert!(diff <= 2);
                     }
                 });
             }
@@ -227,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn buffering() {
+    fn flush_buffering() {
         const COUNT: usize = 10;
         static DESTROYS: AtomicUsize = AtomicUsize::new(0);
 
@@ -245,9 +243,8 @@ mod tests {
             }
         }
 
-        for _ in 0..100_000 {
-            collector.global.collect(&handle.pin());
-        }
+        collector.global.collect(&handle.pin());
+
         assert!(DESTROYS.load(Ordering::Relaxed) < COUNT);
 
         handle.pin().flush();

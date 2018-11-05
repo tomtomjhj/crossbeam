@@ -43,6 +43,8 @@
 //! arbitrary function until the global epoch is advanced enough. Most notably, concurrent data
 //! structures may defer the deallocation of an object.
 //!
+//! TODO(@jeehoonkang): discuss hazard pointers.
+//!
 //! # APIs
 //!
 //! For majority of use cases, just use the default garbage collector by invoking [`pin`]. If you
@@ -86,18 +88,26 @@ cfg_if! {
         #[macro_use]
         extern crate scopeguard;
         #[macro_use]
+        extern crate static_assertions;
+        extern crate murmur3;
+        #[macro_use]
         extern crate bitflags;
 
         mod atomic;
         mod collector;
         mod deferred;
+        mod garbage;
         mod guard;
+        mod hazard;
+        mod bloom_filter;
         mod internal;
         mod sync;
+        mod tag;
 
         pub use self::atomic::{Atomic, CompareAndSetError, CompareAndSetOrdering, Owned, Pointer, Shared};
         pub use self::collector::{Collector, LocalHandle};
         pub use self::guard::{unprotected, Guard};
+        pub use self::hazard::Shield;
     }
 }
 

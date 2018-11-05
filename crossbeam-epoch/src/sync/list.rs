@@ -95,13 +95,14 @@ pub trait IsElement<T> {
 #[derive(Debug)]
 pub struct List<T, C: IsElement<T> = T> {
     /// The head of the linked list.
-    head: Atomic<Entry>,
+    head: Entry,
 
     /// The phantom data for using `T` and `C`.
     _marker: PhantomData<(T, C)>,
 }
 
 /// An iterator used for retrieving values from the list.
+#[derive(Debug)]
 pub struct Iter<'g, T: 'g, C: IsElement<T>> {
     /// The guard that protects the iteration.
     guard: &'g Guard,
@@ -145,8 +146,8 @@ impl Entry {
     /// The entry should be a member of a linked list, and it should not have been deleted.
     /// It should be safe to call `C::finalize` on the entry after the `guard` is dropped, where `C`
     /// is the associated helper for the linked list.
-    pub unsafe fn delete(&self, guard: &Guard) {
-        self.next.fetch_or(1, Release, guard);
+    pub unsafe fn delete(&self) {
+        self.next.fetch_or(1, Release, unprotected());
     }
 }
 
@@ -154,7 +155,7 @@ impl<T, C: IsElement<T>> List<T, C> {
     /// Returns a new, empty linked list.
     pub fn new() -> Self {
         Self {
-            head: Atomic::null(),
+            head: Entry::default(),
             _marker: PhantomData,
         }
     }
@@ -169,9 +170,13 @@ impl<T, C: IsElement<T>> List<T, C> {
     /// - `container` is immovable, e.g. inside an `Owned`
     /// - the same `Entry` is not inserted more than once
     /// - the inserted object will be removed before the list is dropped
-    pub unsafe fn insert<'g>(&'g self, container: Shared<'g, T>, guard: &'g Guard) {
+    pub unsafe fn insert<'g>(&'g self, container: Shared<'g, T>) {
+        // Use of `unprotected()` is safe here because we are not dereferencing shared memory
+        // locations.
+        let guard = unprotected();
+
         // Insert right after head, i.e. at the beginning of the list.
-        let to = &self.head;
+        let to = &self.head.next;
         // Get the intrusively stored Entry of the new element to insert.
         let entry: &Entry = C::entry_of(container.deref());
         // Make a Shared ptr to that Entry.
@@ -207,9 +212,9 @@ impl<T, C: IsElement<T>> List<T, C> {
     pub fn iter<'g>(&'g self, guard: &'g Guard) -> Iter<'g, T, C> {
         Iter {
             guard,
-            pred: &self.head,
-            curr: self.head.load(Acquire, guard),
-            head: &self.head,
+            pred: &self.head.next,
+            curr: self.head.next.load(Acquire, guard),
+            head: &self.head.next,
             _marker: PhantomData,
         }
     }
@@ -218,8 +223,8 @@ impl<T, C: IsElement<T>> List<T, C> {
 impl<T, C: IsElement<T>> Drop for List<T, C> {
     fn drop(&mut self) {
         unsafe {
-            let guard = &unprotected();
-            let mut curr = self.head.load(Relaxed, guard);
+            let guard = unprotected();
+            let mut curr = self.head.next.load(Relaxed, guard);
             while let Some(c) = curr.as_ref() {
                 let succ = c.next.load(Relaxed, guard);
                 // Verify that all elements have been removed from the list.
@@ -286,6 +291,19 @@ impl<'g, T: 'g, C: IsElement<T>> Iterator for Iter<'g, T, C> {
     }
 }
 
+/// Repeats executing the given function until getting an `Ok`.
+#[inline]
+pub fn repeat_iter<F, R>(mut f: F) -> R
+where
+    F: FnMut() -> Result<R, IterError>,
+{
+    loop {
+        if let Ok(result) = f() {
+            return result;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,9 +340,9 @@ mod tests {
         let e3 = Owned::new(Entry::default()).into_shared(&guard);
 
         unsafe {
-            l.insert(e1, &guard);
-            l.insert(e2, &guard);
-            l.insert(e3, &guard);
+            l.insert(e1);
+            l.insert(e2);
+            l.insert(e3);
         }
 
         let mut iter = l.iter(&guard);
@@ -340,9 +358,9 @@ mod tests {
         assert!(iter.next().is_none());
 
         unsafe {
-            e1.as_ref().unwrap().delete(&guard);
-            e2.as_ref().unwrap().delete(&guard);
-            e3.as_ref().unwrap().delete(&guard);
+            e1.as_ref().unwrap().delete();
+            e2.as_ref().unwrap().delete();
+            e3.as_ref().unwrap().delete();
         }
     }
 
@@ -360,10 +378,10 @@ mod tests {
         let e2 = Owned::new(Entry::default()).into_shared(&guard);
         let e3 = Owned::new(Entry::default()).into_shared(&guard);
         unsafe {
-            l.insert(e1, &guard);
-            l.insert(e2, &guard);
-            l.insert(e3, &guard);
-            e2.as_ref().unwrap().delete(&guard);
+            l.insert(e1);
+            l.insert(e2);
+            l.insert(e3);
+            e2.as_ref().unwrap().delete();
         }
 
         let mut iter = l.iter(&guard);
@@ -376,8 +394,8 @@ mod tests {
         assert!(iter.next().is_none());
 
         unsafe {
-            e1.as_ref().unwrap().delete(&guard);
-            e3.as_ref().unwrap().delete(&guard);
+            e1.as_ref().unwrap().delete();
+            e3.as_ref().unwrap().delete();
         }
 
         let mut iter = l.iter(&guard);
@@ -408,13 +426,13 @@ mod tests {
                         let e = Owned::new(Entry::default()).into_shared(&guard);
                         v.push(e);
                         unsafe {
-                            l.insert(e, &guard);
+                            l.insert(e);
                         }
                     }
 
                     for e in v {
                         unsafe {
-                            e.as_ref().unwrap().delete(&guard);
+                            e.as_ref().unwrap().delete();
                         }
                     }
                 });
@@ -450,7 +468,7 @@ mod tests {
                         let e = Owned::new(Entry::default()).into_shared(&guard);
                         v.push(e);
                         unsafe {
-                            l.insert(e, &guard);
+                            l.insert(e);
                         }
                     }
 
@@ -461,7 +479,7 @@ mod tests {
 
                     for e in v {
                         unsafe {
-                            e.as_ref().unwrap().delete(&guard);
+                            e.as_ref().unwrap().delete();
                         }
                     }
                 });

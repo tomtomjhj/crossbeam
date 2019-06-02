@@ -4,6 +4,7 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
 use atomic::{Atomic, Owned};
 use guard::{unprotected, Guard};
+use hazard::{Shield, ShieldError};
 
 /// 's lock-free stack.
 ///
@@ -51,11 +52,15 @@ impl<T> Stack<T> {
     /// Attempts to pop the top element from the stack.
     ///
     /// Returns `None` if the stack is empty.
-    pub fn try_pop(&self, guard: &Guard) -> Option<T> {
+    #[must_use]
+    pub fn try_pop(&self, guard: &Guard) -> Result<Option<T>, ShieldError> {
+        let mut head_shield = Shield::null(guard)?;
+
         loop {
             let head = self.head.load(Acquire, guard);
+            head_shield.defend(head, guard)?;
 
-            match unsafe { head.as_ref() } {
+            match unsafe { head_shield.as_ref() } {
                 Some(h) => {
                     let next = h.next.load(Relaxed, guard);
 
@@ -67,11 +72,11 @@ impl<T> Stack<T> {
                         unsafe {
                             let data = ManuallyDrop::into_inner(ptr::read(&(*h).data));
                             guard.defer_destroy(head);
-                            return Some(data);
+                            return Ok(Some(data));
                         }
                     }
                 }
-                None => return None,
+                None => return Ok(None),
             }
         }
     }
@@ -80,7 +85,7 @@ impl<T> Stack<T> {
 impl<T> Drop for Stack<T> {
     fn drop(&mut self) {
         let guard = unsafe { unprotected() };
-        while self.try_pop(guard).is_some() {}
+        while self.try_pop(guard).unwrap().is_some() {}
     }
 }
 
@@ -99,8 +104,16 @@ mod test {
                 scope.spawn(|_| {
                     for i in 0..10_000 {
                         stack.push(i);
-                        let guard = pin();
-                        assert!(stack.try_pop(&guard).is_some());
+                        let mut guard = pin();
+                        loop {
+                            match stack.try_pop(&guard) {
+                                Ok(r) => {
+                                    assert!(r.is_some());
+                                    break;
+                                }
+                                Err(_) => guard.repin(),
+                            }
+                        }
                     }
                 });
             }
@@ -108,6 +121,6 @@ mod test {
         .unwrap();
 
         let guard = pin();
-        assert!(stack.try_pop(&guard).is_none());
+        assert!(stack.try_pop(&guard).unwrap().is_none());
     }
 }

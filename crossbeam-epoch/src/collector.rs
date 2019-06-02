@@ -168,30 +168,6 @@ mod tests {
     }
 
     #[test]
-    fn pin_holds_advance() {
-        let collector = Collector::new();
-
-        thread::scope(|scope| {
-            for _ in 0..NUM_THREADS {
-                scope.spawn(|_| {
-                    let handle = collector.register();
-                    for _ in 0..500_000 {
-                        let guard = &handle.pin();
-
-                        let before = collector.global.status.load(Ordering::Relaxed, &guard);
-                        collector.global.collect(guard);
-                        let after = collector.global.status.load(Ordering::Relaxed, &guard);
-
-                        let diff = after.tag().wrapping_sub(before.tag()) % 8;
-                        assert!(diff <= 2);
-                    }
-                });
-            }
-        })
-        .unwrap();
-    }
-
-    #[test]
     fn incremental() {
         const COUNT: usize = 100_000;
         static DESTROYS: AtomicUsize = AtomicUsize::new(0);
@@ -427,5 +403,25 @@ mod tests {
             collector.global.collect(guard);
         }
         assert_eq!(DROPS.load(Ordering::Relaxed), COUNT * THREADS);
+    }
+
+    #[test]
+    fn multi_pin() {
+        const THREADS: usize = 16;
+        const STEPS: usize = 100_000;
+
+        let collector = Collector::new();
+
+        thread::scope(|s| {
+            for _ in 0..THREADS {
+                s.spawn(|_| {
+                    let handle = collector.register();
+                    for _ in 0..STEPS {
+                        handle.pin();
+                    }
+                });
+            }
+        })
+        .unwrap();
     }
 }

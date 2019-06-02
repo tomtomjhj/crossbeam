@@ -11,7 +11,7 @@ use core::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
 use crossbeam_utils::CachePadded;
 
-use {unprotected, Atomic, Guard, Owned, Shared};
+use {unprotected, Atomic, Guard, Owned, Shared, Shield, ShieldError};
 
 // The representation here is a singly-linked list, with a sentinel node at the front. In general
 // the `tail` pointer may lag behind the actual tail. Non-sentinel nodes are either all `Data` or
@@ -62,54 +62,71 @@ impl<T> Queue<T> {
     /// Attempts to atomically place `n` into the `next` pointer of `onto`, and returns `true` on
     /// success. The queue's `tail` pointer may be updated.
     #[inline(always)]
-    fn push_internal(&self, onto: Shared<Node<T>>, new: Shared<Node<T>>, guard: &Guard) -> bool {
-        // is `onto` the actual tail?
+    fn push_internal(&self, onto: &Shield<Node<T>>, new: Shared<Node<T>>, guard: &Guard) -> bool {
+        // If `onto` is not the actual tail, try to "help" by moving the tail pointer forward.
         let o = unsafe { onto.deref() };
         let next = o.next.load(Acquire, guard);
-        if unsafe { next.as_ref().is_some() } {
-            // if not, try to "help" by moving the tail pointer forward
-            let _ = self.tail.compare_and_set(onto, next, Release, guard);
-            false
-        } else {
-            // looks like the actual tail; attempt to link in `n`
-            let result = o
-                .next
-                .compare_and_set(Shared::null(), new, Release, guard)
-                .is_ok();
-            if result {
-                // try to move the tail pointer forward
-                let _ = self.tail.compare_and_set(onto, new, Release, guard);
-            }
-            result
+        if !next.is_null() {
+            let _ = self
+                .tail
+                .compare_and_set(onto.shared(), next, Release, guard);
+            return false;
         }
+
+        // looks like the actual tail; attempt to link in `n`
+        let result = o
+            .next
+            .compare_and_set(Shared::null(), new, Release, guard)
+            .is_ok();
+        if result {
+            // try to move the tail pointer forward
+            let _ = self
+                .tail
+                .compare_and_set(onto.shared(), new, Release, guard);
+        }
+        result
     }
 
     /// Adds `t` to the back of the queue, possibly waking up threads blocked on `pop`.
-    pub fn push(&self, t: T, guard: &Guard) {
+    #[must_use]
+    pub fn push(&self, t: T, guard: &Guard) -> Result<(), ShieldError> {
         let new = Owned::new(Node {
             data: ManuallyDrop::new(t),
             next: Atomic::null(),
-        });
-        let new = Owned::into_shared(new, guard);
+        })
+        .into_shared(guard);
+        let mut tail = Shield::null(guard)?;
 
         loop {
             // We push onto the tail, so we'll start optimistically by looking there first.
-            let tail = self.tail.load(Acquire, guard);
+            if let Err(ShieldError::Ejected) = tail.defend(self.tail.load(Acquire, guard), guard) {
+                continue;
+            }
 
             // Attempt to push onto the `tail` snapshot; fails if `tail.next` has changed.
-            if self.push_internal(tail, new, guard) {
-                break;
+            if self.push_internal(&tail, new, guard) {
+                return Ok(());
             }
         }
     }
 
     /// Attempts to pop a data node. `Ok(None)` if queue is empty; `Err(())` if lost race to pop.
     #[inline(always)]
-    fn pop_internal(&self, guard: &Guard) -> Result<Option<T>, ()> {
+    #[must_use]
+    fn pop_internal(
+        &self,
+        shield: &mut Shield<Node<T>>,
+        guard: &Guard,
+    ) -> Result<Result<Option<T>, ()>, ShieldError> {
+        // Access the head.
         let head = self.head.load(Acquire, guard);
-        let h = unsafe { head.deref() };
-        let next = h.next.load(Acquire, guard);
-        match unsafe { next.as_ref() } {
+        shield.defend(head, guard)?;
+
+        // Access the next node to the head.
+        let next = unsafe { shield.deref() }.next.load(Acquire, guard);
+        shield.defend(next, guard)?;
+
+        Ok(match unsafe { shield.as_ref() } {
             Some(n) => unsafe {
                 self.head
                     .compare_and_set(head, next, Release, guard)
@@ -120,16 +137,18 @@ impl<T> Queue<T> {
                     .map_err(|_| ())
             },
             None => Ok(None),
-        }
+        })
     }
 
     /// Attempts to dequeue from the front.
     ///
     /// Returns `None` if the queue is observed to be empty.
-    pub fn try_pop(&self, guard: &Guard) -> Option<T> {
+    #[must_use]
+    pub fn try_pop(&self, guard: &Guard) -> Result<Option<T>, ShieldError> {
+        let mut shield = Shield::null(guard)?;
         loop {
-            if let Ok(head) = self.pop_internal(guard) {
-                return head;
+            if let Ok(head) = self.pop_internal(&mut shield, guard)? {
+                return Ok(head);
             }
         }
     }
@@ -140,7 +159,7 @@ impl<T> Drop for Queue<T> {
         unsafe {
             let guard = unprotected();
 
-            while let Some(_) = self.try_pop(guard) {}
+            while let Some(_) = self.try_pop(guard).unwrap() {}
 
             // Destroy the remaining sentinel node.
             let sentinel = self.head.load(Relaxed, guard);

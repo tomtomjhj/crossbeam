@@ -92,6 +92,7 @@ cfg_if! {
         extern crate murmur3;
         #[macro_use]
         extern crate bitflags;
+        extern crate membarrier;
 
         mod atomic;
         mod collector;
@@ -107,7 +108,7 @@ cfg_if! {
         pub use self::atomic::{Atomic, CompareAndSetError, CompareAndSetOrdering, Owned, Pointer, Shared};
         pub use self::collector::{Collector, LocalHandle};
         pub use self::guard::{unprotected, Guard};
-        pub use self::hazard::Shield;
+        pub use self::hazard::{Shield, ShieldError};
     }
 }
 

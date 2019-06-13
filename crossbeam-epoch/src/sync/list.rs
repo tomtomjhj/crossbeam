@@ -245,7 +245,7 @@ impl<'g, T: 'g, C: IsElement<T>> Iterator for Iter<'g, T, C> {
 
                 // The tag should never be zero, because removing a node after a logically deleted
                 // node leaves the list in an invalid state.
-                debug_assert!(self.curr.tag() == 0);
+                // debug_assert!(self.curr.tag() == 0);
 
                 match self
                     .pred
@@ -265,12 +265,55 @@ impl<'g, T: 'g, C: IsElement<T>> Iterator for Iter<'g, T, C> {
                         continue;
                     }
                     Err(_) => {
+                        // The only safe combination: (2-2) and (3)
+                        // Combinations
+                        // (1), (2-2), (3)
+                        // (2-1), (3)
+                        // (2-2)
+                        // fail by "double free or corruption", "corrupted size vs. prev_size", etc
+                        match self
+                            .pred
+                            .compare_and_set(self.curr.with_tag(1), succ.with_tag(1), Acquire, self.guard)
+                        {
+                            // The pred node is also deleted but still points to the curr node.
+                            Ok(_) => {
+                                // println!("Err Ok\n pred: {:?}\n curr: {:?}\n succ: {:?}", self.pred, self.curr, succ);
+                                // self.pred = self.head;
+                                // self.curr = self.head.load(Acquire, self.guard);
+                                // return Some(Err(IterError::Stalled));
+
+                                // (1)
+                                // unsafe {
+                                    // let p = self.curr;
+                                    // self.guard.defer_unchecked(move || C::finalize(p.deref()));
+                                // }
+                                // (2-1)
+                                self.curr = succ.with_tag(1);
+                                // (2-2)
+                                // self.curr = succ;
+                                continue;
+                            }
+                            // Another thread has already unlinked the deleted element and the pred
+                            // now points to another node.
+                            Err(e) => {
+                                // println!("Err Err\n pred: {:?}\n curr: {:?}\n    e: {:?}", self.pred, self.curr, e.current);
+                                // (3) adapted from #376
+                                if e.current.tag() != 0 {
+                                    self.pred = self.head;
+                                    self.curr = self.head.load(Acquire, self.guard);
+                                    return Some(Err(IterError::Stalled));
+                                }
+                                self.curr = e.current;
+                                continue;
+                            }
+                        }
+
                         // A concurrent thread modified the predecessor node. Since it might've
                         // been deleted, we need to restart from `head`.
-                        self.pred = self.head;
-                        self.curr = self.head.load(Acquire, self.guard);
+                        // self.pred = self.head;
+                        // self.curr = self.head.load(Acquire, self.guard);
 
-                        return Some(Err(IterError::Stalled));
+                        // return Some(Err(IterError::Stalled));
                     }
                 }
             }

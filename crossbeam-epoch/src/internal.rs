@@ -38,8 +38,7 @@
 use core::cell::{Cell, UnsafeCell};
 use core::mem::{self, ManuallyDrop};
 use core::num::Wrapping;
-use core::sync::atomic;
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{self, AtomicUsize, Ordering};
 use core::{fmt, ptr};
 
 use crossbeam_utils::CachePadded;
@@ -47,10 +46,9 @@ use crossbeam_utils::CachePadded;
 use atomic::{Owned, Shared};
 use collector::{Collector, LocalHandle};
 use deferred::Deferred;
-use epoch::{AtomicEpoch, Epoch};
 use guard::{unprotected, Guard};
 use sync::list::{Entry, IsElement, IterError, List};
-use sync::queue::Queue;
+use sync::stack::Stack;
 
 /// Maximum number of objects a bag can contain.
 #[cfg(not(feature = "sanitize"))]
@@ -95,11 +93,6 @@ impl Bag {
         } else {
             Err(deferred)
         }
-    }
-
-    /// Seals the bag with the given epoch.
-    fn seal(self, epoch: Epoch) -> SealedBag {
-        SealedBag { epoch, bag: self }
     }
 }
 
@@ -214,22 +207,33 @@ impl fmt::Debug for Bag {
 
 fn no_op_func() {}
 
-/// A pair of an epoch and a bag.
-#[derive(Default, Debug)]
-struct SealedBag {
-    epoch: Epoch,
-    bag: Bag,
+/// TODO
+const EPOCH_WIDTH: u32 = 3;
+
+bitflags! {
+    struct LocalFlags: usize {
+        const PINNED = 1 << EPOCH_WIDTH;
+        const EPOCH  = (1 << EPOCH_WIDTH) - 1;
+    }
 }
 
-/// It is safe to share `SealedBag` because `is_expired` only inspects the epoch.
-unsafe impl Sync for SealedBag {}
+impl LocalFlags {
+    fn new(is_pinned: bool, epoch: usize) -> Self {
+        let is_pinned = if is_pinned {
+            Self::PINNED
+        } else {
+            Self::empty()
+        };
+        let epoch = Self::from_bits_truncate(epoch) & Self::EPOCH;
+        is_pinned | epoch
+    }
 
-impl SealedBag {
-    /// Checks if it is safe to drop the bag w.r.t. the given global epoch.
-    fn is_expired(&self, global_epoch: Epoch) -> bool {
-        // A pinned participant can witness at most two epoch advancement. Therefore, any bag that
-        // is within two epoch of the current one cannot be destroyed yet.
-        global_epoch.wrapping_sub(self.epoch) >= 3
+    fn is_pinned(self) -> bool {
+        !(self & Self::PINNED).is_empty()
+    }
+
+    fn epoch(self) -> usize {
+        (self & Self::EPOCH).bits()
     }
 }
 
@@ -238,11 +242,11 @@ pub struct Global {
     /// The intrusive linked list of `Local`s.
     locals: List<Local>,
 
-    /// The global queue of bags of deferred functions.
-    queue: Queue<SealedBag>,
+    /// The global pool of bags of deferred functions.
+    bags: [CachePadded<Stack<Bag>>; 1 << EPOCH_WIDTH],
 
     /// The global epoch.
-    pub(crate) epoch: CachePadded<AtomicEpoch>,
+    pub(crate) epoch: AtomicUsize,
 }
 
 impl Global {
@@ -254,15 +258,45 @@ impl Global {
     pub fn new() -> Self {
         Self {
             locals: List::new(),
-            queue: Queue::new(),
-            epoch: CachePadded::new(AtomicEpoch::new(Epoch::starting())),
+            bags: [
+                CachePadded::new(Stack::new()),
+                CachePadded::new(Stack::new()),
+                CachePadded::new(Stack::new()),
+                CachePadded::new(Stack::new()),
+                CachePadded::new(Stack::new()),
+                CachePadded::new(Stack::new()),
+                CachePadded::new(Stack::new()),
+                CachePadded::new(Stack::new()),
+            ],
+            epoch: AtomicUsize::new(0),
         }
     }
 
     /// Pushes the bag into the global queue and replaces the bag with a new empty bag.
-    pub fn push_bag(&self, bag: &mut Bag, epoch: Epoch, guard: &Guard) {
+    pub fn push_bag(&self, bag: &mut Bag, epoch: usize, guard: &Guard) {
+        let bags = unsafe { &*self.bags.get_unchecked(epoch % (1 << EPOCH_WIDTH)) };
         let bag = mem::replace(bag, Bag::new());
-        self.queue.push(bag.seal(epoch), guard);
+        bags.push(bag, guard);
+    }
+
+    #[inline]
+    pub fn collect_inner(&self, index: usize, guard: &Guard) -> bool {
+        let steps = if cfg!(feature = "sanitize") {
+            usize::max_value()
+        } else {
+            Self::COLLECT_STEPS
+        };
+        let bags = unsafe { &*self.bags.get_unchecked(index % (1 << EPOCH_WIDTH)) };
+
+        for _ in 0..steps {
+            if let Some(bag) = bags.try_pop(guard) {
+                drop(bag);
+            } else {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Collects several bags from the global queue and executes deferred functions in them.
@@ -274,22 +308,9 @@ impl Global {
     /// `collect()` is not called.
     #[cold]
     pub fn collect(&self, guard: &Guard) {
-        let global_epoch = self.try_advance(guard);
-
-        let steps = if cfg!(feature = "sanitize") {
-            usize::max_value()
-        } else {
-            Self::COLLECT_STEPS
-        };
-
-        for _ in 0..steps {
-            match self.queue.try_pop_if(
-                &|sealed_bag: &SealedBag| sealed_bag.is_expired(global_epoch),
-                guard,
-            ) {
-                None => break,
-                Some(sealed_bag) => drop(sealed_bag),
-            }
+        let global_epoch = self.epoch.load(Ordering::Acquire);
+        if self.collect_inner(global_epoch.wrapping_sub(3), guard) {
+            self.try_advance(guard);
         }
     }
 
@@ -302,8 +323,10 @@ impl Global {
     ///
     /// `try_advance()` is annotated `#[cold]` because it is rarely called.
     #[cold]
-    pub fn try_advance(&self, guard: &Guard) -> Epoch {
+    pub fn try_advance(&self, guard: &Guard) {
         let global_epoch = self.epoch.load(Ordering::Relaxed);
+        let global_epoch_truncated = global_epoch % (1 << EPOCH_WIDTH);
+
         atomic::fence(Ordering::SeqCst);
 
         // TODO(stjepang): `Local`s are stored in a linked list because linked lists are fairly
@@ -315,31 +338,38 @@ impl Global {
                     // A concurrent thread stalled this iteration. That thread might also try to
                     // advance the epoch, in which case we leave the job to it. Otherwise, the
                     // epoch will not be advanced.
-                    return global_epoch;
+                    return;
                 }
                 Ok(local) => {
-                    let local_epoch = local.epoch.load(Ordering::Relaxed);
+                    let local_status = local.status.load(Ordering::Relaxed);
+                    let local_flags = LocalFlags::from_bits_truncate(local_status);
 
                     // If the participant was pinned in a different epoch, we cannot advance the
                     // global epoch just yet.
-                    if local_epoch.is_pinned() && local_epoch.unpinned() != global_epoch {
-                        return global_epoch;
+                    if local_flags.is_pinned() && local_flags.epoch() != global_epoch_truncated {
+                        return;
                     }
                 }
             }
         }
         atomic::fence(Ordering::Acquire);
 
-        // All pinned participants were pinned in the current global epoch.
-        // Now let's advance the global epoch...
-        //
+        // All pinned participants were pinned in the current global epoch.  Now let's advance the
+        // global epoch...
+
+        // Collects the old garbage bags.
+        let index = global_epoch.wrapping_sub(3);
+        if !self.collect_inner(index, guard) {
+            // There are remaining old garbage bags. We cannot advance the global epoch just yet.
+            return;
+        }
+
         // Note that if another thread already advanced it before us, this store will simply
         // overwrite the global epoch with the same value. This is true because `try_advance` was
         // called from a thread that was pinned in `global_epoch`, and the global epoch cannot be
         // advanced two steps ahead of it.
-        let new_epoch = global_epoch.successor();
-        self.epoch.store(new_epoch, Ordering::Release);
-        new_epoch
+        let new_global_epoch = global_epoch.wrapping_add(1);
+        self.epoch.store(new_global_epoch, Ordering::Release);
     }
 }
 
@@ -348,8 +378,8 @@ pub struct Local {
     /// A node in the intrusive linked list of `Local`s.
     entry: Entry,
 
-    /// The local epoch.
-    epoch: AtomicEpoch,
+    /// The local status.
+    status: AtomicUsize,
 
     /// A reference to the global data.
     ///
@@ -374,7 +404,10 @@ pub struct Local {
 impl Local {
     /// Number of pinnings after which a participant will execute some deferred functions from the
     /// global queue.
-    const PINNINGS_BETWEEN_COLLECT: usize = 128;
+    const PINNINGS_BETWEEN_COLLECT: usize = 32;
+
+    /// Number of pinnings after which a participant will try to advance the global epoch.
+    const PINNINGS_BETWEEN_TRY_ADVANCE: usize = 1024;
 
     /// Registers a new `Local` in the provided `Global`.
     pub fn register(collector: &Collector) -> LocalHandle {
@@ -383,7 +416,7 @@ impl Local {
 
             let local = Owned::new(Local {
                 entry: Entry::default(),
-                epoch: AtomicEpoch::new(Epoch::starting()),
+                status: AtomicUsize::new(LocalFlags::empty().bits()),
                 collector: UnsafeCell::new(ManuallyDrop::new(collector.clone())),
                 bag: UnsafeCell::new(Bag::new()),
                 guard_count: Cell::new(0),
@@ -425,8 +458,9 @@ impl Local {
         let bag = &mut *self.bag.get();
 
         while let Err(d) = bag.try_push(deferred) {
-            let epoch = self.epoch.load(Ordering::Relaxed).unpinned();
-            self.global().push_bag(bag, epoch, guard);
+            let local_status = self.status.load(Ordering::Relaxed);
+            let local_flags = LocalFlags::from_bits_truncate(local_status);
+            self.global().push_bag(bag, local_flags.epoch(), guard);
             deferred = d;
         }
     }
@@ -435,8 +469,9 @@ impl Local {
         let bag = unsafe { &mut *self.bag.get() };
 
         if !bag.is_empty() {
-            let epoch = self.epoch.load(Ordering::Relaxed).unpinned();
-            self.global().push_bag(bag, epoch, guard);
+            let local_status = self.status.load(Ordering::Relaxed);
+            let local_flags = LocalFlags::from_bits_truncate(local_status);
+            self.global().push_bag(bag, local_flags.epoch(), guard);
         }
 
         self.global().collect(guard);
@@ -454,10 +489,11 @@ impl Local {
             // Now we must store the global epoch into `self.epoch` and execute a `SeqCst` fence.
             // The fence makes sure that any future loads from `Atomic`s will not happen before this
             // store.
-            let mut current = Epoch::starting();
-            let mut new = self.global().epoch.load(Ordering::Relaxed).pinned();
+            let mut global_epoch = self.global().epoch.load(Ordering::Relaxed);
 
             loop {
+                let new_status = LocalFlags::new(true, global_epoch).bits();
+
                 if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
                     // HACK(stjepang): On x86 architectures there are two different ways of
                     // executing a `SeqCst` fence.
@@ -472,36 +508,42 @@ impl Local {
                     // very differently from SC accesses), but experimental evidence suggests that
                     // this works fine.  Using inline assembly would be a viable (and correct)
                     // alternative, but alas, that is not possible on stable Rust.
-                    let previous = self.epoch.compare_and_swap(current, new, Ordering::SeqCst);
-                    debug_assert_eq!(current, previous, "participant was expected to be unpinned");
+                    self.status.swap(new_status, Ordering::SeqCst);
 
                     // We add a compiler fence to make it less likely for LLVM to do something wrong
                     // here.  Formally, this is not enough to get rid of data races; practically, it
                     // should go a long way.
                     atomic::compiler_fence(Ordering::SeqCst);
                 } else {
-                    self.epoch.store(new, Ordering::Relaxed);
+                    self.status.store(new_status, Ordering::Relaxed);
                     atomic::fence(Ordering::SeqCst);
                 }
 
                 // Now we validate that the value we read from the global epoch is not stale.
-                let validation = self.global().epoch.load(Ordering::Relaxed).pinned();
-                if new == validation {
+                let global_epoch_validation = self.global().epoch.load(Ordering::Relaxed);
+                if global_epoch == global_epoch_validation {
                     break;
                 }
 
-                current = new;
-                new = validation;
+                global_epoch = global_epoch_validation;
             }
 
             // Increment the pin counter.
             let count = self.pin_count.get();
             self.pin_count.set(count + Wrapping(1));
 
-            // After every `PINNINGS_BETWEEN_COLLECT` try advancing the epoch and collecting
-            // some garbage.
+            // After every `PINNINGS_BETWEEN_COLLECT` try collecting some old garbage bags.
             if count.0 % Self::PINNINGS_BETWEEN_COLLECT == 0 {
-                self.global().collect(&guard);
+                // If all old garbage bags are collected...
+                if self
+                    .global()
+                    .collect_inner(global_epoch.wrapping_sub(3), &guard)
+                {
+                    // After every `PINNINGS_BETWEEN_COLLECT` try advancing the global epoch.
+                    if count.0 % Self::PINNINGS_BETWEEN_TRY_ADVANCE == 0 {
+                        self.global().try_advance(&guard);
+                    }
+                }
             }
         }
 
@@ -515,7 +557,8 @@ impl Local {
         self.guard_count.set(guard_count - 1);
 
         if guard_count == 1 {
-            self.epoch.store(Epoch::starting(), Ordering::Release);
+            self.status
+                .store(LocalFlags::empty().bits(), Ordering::Release);
 
             if self.handle_count.get() == 0 {
                 self.finalize();
@@ -530,14 +573,19 @@ impl Local {
 
         // Update the local epoch only if there's only one guard.
         if guard_count == 1 {
-            let epoch = self.epoch.load(Ordering::Relaxed);
-            let global_epoch = self.global().epoch.load(Ordering::Relaxed).pinned();
+            let local_status = self.status.load(Ordering::Relaxed);
+            let local_flags = LocalFlags::from_bits_truncate(local_status);
+            let global_epoch = self.global().epoch.load(Ordering::Relaxed);
+            let global_epoch_truncated = global_epoch % (1 << EPOCH_WIDTH);
 
             // Update the local epoch only if the global epoch is greater than the local epoch.
-            if epoch != global_epoch {
+            if local_flags.epoch() != global_epoch_truncated {
                 // We store the new epoch with `Release` because we need to ensure any memory
                 // accesses from the previous epoch do not leak into the new one.
-                self.epoch.store(global_epoch, Ordering::Release);
+                self.status.store(
+                    LocalFlags::new(true, global_epoch).bits(),
+                    Ordering::Release,
+                );
 
                 // However, we don't need a following `SeqCst` fence, because it is safe for memory
                 // accesses from the new epoch to be executed before updating the local epoch. At
@@ -579,9 +627,11 @@ impl Local {
         unsafe {
             // Pin and move the local bag into the global queue. It's important that `push_bag`
             // doesn't defer destruction on any new garbage.
-            let epoch = self.epoch.load(Ordering::Relaxed).unpinned();
+            let local_status = self.status.load(Ordering::Relaxed);
+            let local_flags = LocalFlags::from_bits_truncate(local_status);
             let guard = &self.pin();
-            self.global().push_bag(&mut *self.bag.get(), epoch, guard);
+            self.global()
+                .push_bag(&mut *self.bag.get(), local_flags.epoch(), guard);
         }
         // Revert the handle count back to zero.
         self.handle_count.set(0);

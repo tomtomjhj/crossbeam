@@ -80,11 +80,12 @@ cfg_if! {
         extern crate memoffset;
         #[macro_use]
         extern crate scopeguard;
+        #[macro_use]
+        extern crate bitflags;
 
         mod atomic;
         mod collector;
         mod deferred;
-        mod epoch;
         mod guard;
         mod internal;
         mod sync;

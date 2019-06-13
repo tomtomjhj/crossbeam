@@ -123,53 +123,12 @@ impl<T> Queue<T> {
         }
     }
 
-    /// Attempts to pop a data node, if the data satisfies the given condition. `Ok(None)` if queue
-    /// is empty or the data does not satisfy the condition; `Err(())` if lost race to pop.
-    #[inline(always)]
-    fn pop_if_internal<F>(&self, condition: F, guard: &Guard) -> Result<Option<T>, ()>
-    where
-        T: Sync,
-        F: Fn(&T) -> bool,
-    {
-        let head = self.head.load(Acquire, guard);
-        let h = unsafe { head.deref() };
-        let next = h.next.load(Acquire, guard);
-        match unsafe { next.as_ref() } {
-            Some(n) if condition(&n.data) => unsafe {
-                self.head
-                    .compare_and_set(head, next, Release, guard)
-                    .map(|_| {
-                        guard.defer_destroy(head);
-                        Some(ManuallyDrop::into_inner(ptr::read(&n.data)))
-                    })
-                    .map_err(|_| ())
-            },
-            None | Some(_) => Ok(None),
-        }
-    }
-
     /// Attempts to dequeue from the front.
     ///
     /// Returns `None` if the queue is observed to be empty.
     pub fn try_pop(&self, guard: &Guard) -> Option<T> {
         loop {
             if let Ok(head) = self.pop_internal(guard) {
-                return head;
-            }
-        }
-    }
-
-    /// Attempts to dequeue from the front, if the item satisfies the given condition.
-    ///
-    /// Returns `None` if the queue is observed to be empty, or the head does not satisfy the given
-    /// condition.
-    pub fn try_pop_if<F>(&self, condition: F, guard: &Guard) -> Option<T>
-    where
-        T: Sync,
-        F: Fn(&T) -> bool,
-    {
-        loop {
-            if let Ok(head) = self.pop_if_internal(&condition, guard) {
                 return head;
             }
         }

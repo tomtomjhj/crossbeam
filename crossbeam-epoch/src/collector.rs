@@ -217,7 +217,7 @@ mod tests {
 
         while last < COUNT {
             let curr = DESTROYS.load(Ordering::Relaxed);
-            assert!(curr - last <= 1024);
+            assert!(curr - last <= 2048);
             last = curr;
 
             let guard = &handle.pin();

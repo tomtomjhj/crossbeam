@@ -192,6 +192,30 @@ impl<T, C: IsElement<T>> List<T, C> {
         }
     }
 
+    pub unsafe fn insert_with_snapshot<'g>(
+        &'g self,
+        snapshot: Shared<Entry>,
+        container: Shared<'g, T>,
+        guard: &'g Guard,
+    ) -> bool {
+        // Insert right after head, i.e. at the beginning of the list.
+        let to = &self.head;
+        // Get the intrusively stored Entry of the new element to insert.
+        let entry: &Entry = C::entry_of(container.deref());
+        // Make a Shared ptr to that Entry.
+        let entry_ptr = Shared::from(entry as *const _);
+
+        entry.next.store(snapshot, Relaxed);
+        match to.compare_and_set_weak(snapshot, entry_ptr, Release, guard) {
+            Ok(_) => return true,
+            Err(_) => return false,
+        }
+    }
+
+    pub fn head(&self) -> &Atomic<Entry> {
+        &self.head
+    }
+
     /// Returns an iterator over all objects.
     ///
     /// # Caveat

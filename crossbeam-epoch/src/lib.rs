@@ -92,7 +92,7 @@ cfg_if! {
         mod epoch;
         mod guard;
         mod internal;
-        mod sync;
+        pub mod sync;
 
         pub use self::atomic::{Atomic, CompareAndSetError, CompareAndSetOrdering, Owned, Pointer, Shared};
         pub use self::collector::{Collector, LocalHandle};

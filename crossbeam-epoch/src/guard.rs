@@ -192,7 +192,7 @@ impl Guard {
         F: FnOnce() -> R,
     {
         if let Some(local) = self.local.as_ref() {
-            local.inc_retired();
+            local.inc_retired(1);
             local.defer(Deferred::new(move || drop(f())), self);
         }
     }

@@ -165,17 +165,7 @@ impl Global {
     }
 
     pub fn add_local_report(&self, retired: usize, reclaimed: usize) {
-        loop {
-            let old = self.retired_unreclaimed.load(Ordering::Acquire);
-            let new = old + (retired - reclaimed);
-            if self
-                .retired_unreclaimed
-                .compare_and_swap(old, new, Ordering::SeqCst)
-                == old
-            {
-                return;
-            }
-        }
+        self.retired_unreclaimed.fetch_add(retired.wrapping_sub(reclaimed), Ordering::Relaxed);
     }
 
     /// Pushes the bag into the global queue and replaces the bag with a new empty bag.
@@ -331,14 +321,14 @@ impl Local {
         }
     }
 
-    pub fn inc_retired(&self) {
+    pub fn inc_retired(&self, ammount: usize) {
         let retired = self.retired.get();
-        self.retired.set(retired + 1);
+        self.retired.set(retired.wrapping_add(ammount));
     }
 
     pub fn inc_reclaimed(&self, ammount: usize) {
         let reclaimed = self.reclaimed.get();
-        self.reclaimed.set(reclaimed + ammount);
+        self.reclaimed.set(reclaimed.wrapping_add(ammount));
     }
 
     /// Returns a reference to the `Global` in which this `Local` resides.

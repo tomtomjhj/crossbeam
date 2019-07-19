@@ -39,13 +39,13 @@ use core::cell::{Cell, UnsafeCell};
 use core::mem::{self, ManuallyDrop};
 use core::num::Wrapping;
 use core::ptr;
-use core::sync::atomic;
 use core::sync::atomic::Ordering;
+use core::sync::atomic::{self, AtomicUsize};
 
 use arrayvec::ArrayVec;
 use crossbeam_utils::CachePadded;
 
-use atomic::{Shared, Owned};
+use atomic::{Owned, Shared};
 use collector::{Collector, LocalHandle};
 use deferred::Deferred;
 use epoch::{AtomicEpoch, Epoch};
@@ -136,6 +136,9 @@ pub struct Global {
 
     /// The global epoch.
     pub(crate) epoch: CachePadded<AtomicEpoch>,
+
+    ///
+    retired_unreclaimed: AtomicUsize,
 }
 
 impl Global {
@@ -149,6 +152,25 @@ impl Global {
             locals: List::new(),
             queue: Queue::new(),
             epoch: CachePadded::new(AtomicEpoch::new(Epoch::starting())),
+            retired_unreclaimed: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn report(&self) {
+        println!("retired but unreclaimed: {}", self.retired_unreclaimed.load(Ordering::SeqCst));
+    }
+
+    pub fn add_local_report(&self, retired: usize, reclaimed: usize) {
+        loop {
+            let old = self.retired_unreclaimed.load(Ordering::Acquire);
+            let new = old + (retired - reclaimed);
+            if self
+                .retired_unreclaimed
+                .compare_and_swap(old, new, Ordering::SeqCst)
+                == old
+            {
+                return;
+            }
         }
     }
 
@@ -266,6 +288,9 @@ pub struct Local {
     ///
     /// This is just an auxilliary counter that sometimes kicks off collection.
     pin_count: Cell<Wrapping<usize>>,
+
+    retired: Cell<usize>,
+    reclaimed: Cell<usize>,
 }
 
 impl Local {
@@ -286,6 +311,8 @@ impl Local {
                 guard_count: Cell::new(0),
                 handle_count: Cell::new(1),
                 pin_count: Cell::new(Wrapping(0)),
+                retired: Cell::new(0),
+                reclaimed: Cell::new(0),
             })
             .into_shared(&unprotected());
             collector.global.locals.insert(local, &unprotected());
@@ -293,6 +320,16 @@ impl Local {
                 local: local.as_raw(),
             }
         }
+    }
+
+    pub fn inc_retired(&self) {
+        let retired = self.retired.get();
+        self.retired.set(retired + 1);
+    }
+
+    pub fn inc_reclaimed(&self) {
+        let reclaimed = self.reclaimed.get();
+        self.reclaimed.set(reclaimed + 1);
     }
 
     /// Returns a reference to the `Global` in which this `Local` resides.
@@ -458,6 +495,8 @@ impl Local {
     fn finalize(&self) {
         debug_assert_eq!(self.guard_count.get(), 0);
         debug_assert_eq!(self.handle_count.get(), 0);
+
+        self.global().add_local_report(self.retired.get(), self.reclaimed.get());
 
         // Temporarily increment handle count. This is required so that the following call to `pin`
         // doesn't call `finalize` again.

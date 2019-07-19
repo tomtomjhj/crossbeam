@@ -5,7 +5,7 @@ use std::mem::ManuallyDrop;
 use std::ptr;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
-use epoch::{Atomic, Owned};
+use epoch::{report_retire_unreclaimed, Atomic, Owned};
 use utils::thread::scope;
 
 /// Treiber's lock-free stack.
@@ -68,7 +68,7 @@ impl<T> TreiberStack<T> {
                         .is_ok()
                     {
                         unsafe {
-                            guard.defer_destroy(head);
+                            guard.retire(head);
                             return Some(ManuallyDrop::into_inner(ptr::read(&(*h).data)));
                         }
                     }
@@ -92,13 +92,23 @@ impl<T> Drop for TreiberStack<T> {
 }
 
 fn main() {
-    let stack = TreiberStack::new();
+    let stack = &TreiberStack::new();
 
     scope(|scope| {
-        for _ in 0..10 {
-            scope.spawn(|_| {
-                for i in 0..10_000 {
+        for t in 1..140 {
+            scope.spawn(move |_| {
+                for i in 0..(t * 100) {
                     stack.push(i);
+                }
+            });
+        }
+    })
+    .unwrap();
+
+    scope(|scope| {
+        for t in 1..140 {
+            scope.spawn(move |_| {
+                for _ in 0..(t * 100) {
                     assert!(stack.pop().is_some());
                 }
             });
@@ -107,4 +117,6 @@ fn main() {
     .unwrap();
 
     assert!(stack.pop().is_none());
+
+    report_retire_unreclaimed();
 }

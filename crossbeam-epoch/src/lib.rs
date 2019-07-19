@@ -106,6 +106,6 @@ cfg_if! {
         extern crate lazy_static;
 
         mod default;
-        pub use self::default::{default_collector, is_pinned, pin};
+        pub use self::default::{default_collector, is_pinned, pin, report_retire_unreclaimed};
     }
 }

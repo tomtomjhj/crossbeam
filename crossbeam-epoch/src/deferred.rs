@@ -4,6 +4,8 @@ use core::marker::PhantomData;
 use core::mem;
 use core::ptr;
 
+use internal::Local;
+
 /// Number of words a piece of `Data` can hold.
 ///
 /// Three words should be enough for the majority of cases. For example, you can fit inside it the
@@ -19,6 +21,8 @@ type Data = [usize; DATA_WORDS];
 pub struct Deferred {
     call: unsafe fn(*mut u8),
     data: Data,
+    /// `Some(..)` if this `Defered` is tracked.
+    pub(crate) local_tracked: Option<*const Local>,
     _marker: PhantomData<*mut ()>, // !Send + !Sync
 }
 
@@ -47,6 +51,7 @@ impl Deferred {
                 Deferred {
                     call: call::<F>,
                     data,
+                    local_tracked: None,
                     _marker: PhantomData,
                 }
             } else {
@@ -62,15 +67,27 @@ impl Deferred {
                 Deferred {
                     call: call::<F>,
                     data,
+                    local_tracked: None,
                     _marker: PhantomData,
                 }
             }
         }
     }
+    #[inline]
+    pub fn new_tracked<F: FnOnce()>(f: F, local: *const Local) -> Self {
+        let mut deferred = Self::new(f);
+        deferred.local_tracked = Some(local);
+        deferred
+    }
 
     /// Calls the function.
     #[inline]
     pub fn call(mut self) {
+        // increment reclamation counter
+        // TODO: local might have been finalized already
+        if let Some(local) = unsafe { self.local_tracked.and_then(|l| l.as_ref()) } {
+            local.inc_reclaimed();
+        }
         let call = self.call;
         unsafe { call(&mut self.data as *mut Data as *mut u8) };
     }

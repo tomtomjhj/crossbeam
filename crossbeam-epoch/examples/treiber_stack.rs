@@ -68,7 +68,7 @@ impl<T> TreiberStack<T> {
                         .is_ok()
                     {
                         unsafe {
-                            guard.retire(head);
+                            guard.defer_destroy(head);
                             return Some(ManuallyDrop::into_inner(ptr::read(&(*h).data)));
                         }
                     }

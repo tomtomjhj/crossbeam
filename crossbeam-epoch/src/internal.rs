@@ -75,6 +75,10 @@ impl Bag {
         Self::default()
     }
 
+    pub fn len(&self) -> usize {
+        self.deferreds.len()
+    }
+
     /// Returns `true` if the bag is empty.
     pub fn is_empty(&self) -> bool {
         self.deferreds.is_empty()
@@ -207,7 +211,12 @@ impl Global {
                 guard,
             ) {
                 None => break,
-                Some(sealed_bag) => drop(sealed_bag),
+                Some(sealed_bag) => {
+                    if let Some(local) = unsafe { guard.local.as_ref() } {
+                        local.inc_reclaimed(sealed_bag.bag.len());
+                    }
+                    drop(sealed_bag);
+                }
             }
         }
     }
@@ -327,9 +336,9 @@ impl Local {
         self.retired.set(retired + 1);
     }
 
-    pub fn inc_reclaimed(&self) {
+    pub fn inc_reclaimed(&self, ammount: usize) {
         let reclaimed = self.reclaimed.get();
-        self.reclaimed.set(reclaimed + 1);
+        self.reclaimed.set(reclaimed + ammount);
     }
 
     /// Returns a reference to the `Global` in which this `Local` resides.

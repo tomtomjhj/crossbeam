@@ -192,6 +192,7 @@ impl Guard {
         F: FnOnce() -> R,
     {
         if let Some(local) = self.local.as_ref() {
+            local.inc_retired();
             local.defer(Deferred::new(move || drop(f())), self);
         }
     }
@@ -268,15 +269,6 @@ impl Guard {
     /// [`unprotected`]: fn.unprotected.html
     pub unsafe fn defer_destroy<T>(&self, ptr: Shared<T>) {
         self.defer_unchecked(move || ptr.into_owned());
-    }
-
-    /// Identical to `defer_destroy` but keeps track of _retired & unreclaimed_ blocks.
-    pub unsafe fn retire<T>(&self, ptr: Shared<T>) {
-        let f = move || ptr.into_owned();
-        if let Some(local) = self.local.as_ref() {
-            local.inc_retired();
-            local.defer(Deferred::new_tracked(move || drop(f()), local), self);
-        }
     }
 
     /// Clears up the thread-local cache of deferred functions by executing them or moving into the

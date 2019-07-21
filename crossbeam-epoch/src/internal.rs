@@ -142,7 +142,8 @@ pub struct Global {
     pub(crate) epoch: CachePadded<AtomicEpoch>,
 
     ///
-    retired_unreclaimed: AtomicUsize,
+    retired: AtomicUsize,
+    reclaimed: AtomicUsize,
 }
 
 impl Global {
@@ -156,16 +157,24 @@ impl Global {
             locals: List::new(),
             queue: Queue::new(),
             epoch: CachePadded::new(AtomicEpoch::new(Epoch::starting())),
-            retired_unreclaimed: AtomicUsize::new(0),
+            retired: AtomicUsize::new(0),
+            reclaimed: AtomicUsize::new(0),
         }
     }
 
     pub fn report(&self) {
-        println!("retired but unreclaimed: {}", self.retired_unreclaimed.load(Ordering::SeqCst));
+        let retired = self.retired.load(Ordering::SeqCst);
+        let reclaimed = self.reclaimed.load(Ordering::SeqCst);
+        println!(
+            "retired: {}\nunreclaimed: {}",
+            retired,
+            retired.wrapping_sub(reclaimed)
+        );
     }
 
     pub fn add_local_report(&self, retired: usize, reclaimed: usize) {
-        self.retired_unreclaimed.fetch_add(retired.wrapping_sub(reclaimed), Ordering::Relaxed);
+        self.retired.fetch_add(retired, Ordering::Relaxed);
+        self.reclaimed.fetch_add(reclaimed, Ordering::Relaxed);
     }
 
     /// Pushes the bag into the global queue and replaces the bag with a new empty bag.
@@ -495,7 +504,8 @@ impl Local {
         debug_assert_eq!(self.guard_count.get(), 0);
         debug_assert_eq!(self.handle_count.get(), 0);
 
-        self.global().add_local_report(self.retired.get(), self.reclaimed.get());
+        self.global()
+            .add_local_report(self.retired.get(), self.reclaimed.get());
 
         // Temporarily increment handle count. This is required so that the following call to `pin`
         // doesn't call `finalize` again.

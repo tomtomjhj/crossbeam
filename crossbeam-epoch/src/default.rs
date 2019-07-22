@@ -44,11 +44,6 @@ where
         .unwrap_or_else(|_| f(&COLLECTOR.register()))
 }
 
-/// Reports the number of blocks that are retired but not reclaimed yet.
-pub fn report_retire_unreclaimed() {
-    default_collector().global.report();
-}
-
 #[cfg(test)]
 mod tests {
     use crossbeam_utils::thread;

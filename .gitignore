@@ -2,3 +2,5 @@
 /crossbeam-channel/benchmarks/*.png
 target/
 Cargo.lock
+rusty-tags.vi
+.vscode/

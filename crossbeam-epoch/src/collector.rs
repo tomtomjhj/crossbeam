@@ -38,6 +38,11 @@ impl Collector {
     pub fn register(&self) -> LocalHandle {
         Local::register(self)
     }
+
+    /// Reports the number of blocks that are retired but not reclaimed yet.
+    pub fn report_retire_unreclaimed(&self) {
+        self.global.report();
+    }
 }
 
 impl Clone for Collector {

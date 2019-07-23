@@ -27,7 +27,7 @@ cfg-if = "0.1.2"
 memoffset = "0.2"
 static_assertions = "0.3.2"
 bitflags = "1.0"
-membarrier = "0.2"
+membarrier = { git = "https://github.com/jeehoonkang/membarrier-rs" }
 
 [dependencies.murmur3]
 git = "https://github.com/jeehoonkang/murmur3.git"

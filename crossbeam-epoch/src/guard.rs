@@ -74,6 +74,7 @@ impl Guard {
     #[inline]
     unsafe fn defer_garbage(&self, garbage: Garbage) {
         if let Some(local) = self.local.as_ref() {
+            local.inc_retired(1);
             local.defer(garbage, self);
         }
     }

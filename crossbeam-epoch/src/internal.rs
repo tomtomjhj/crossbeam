@@ -37,11 +37,12 @@
 
 use core::cell::{Cell, UnsafeCell};
 use core::cmp;
+use core::convert::TryInto;
 use core::mem::{self, ManuallyDrop};
 use core::num::Wrapping;
+use core::ops::Deref;
 use core::ptr;
 use core::sync::atomic::{self, Ordering};
-use core::ops::Deref;
 
 use crossbeam_utils::CachePadded;
 use membarrier;
@@ -195,7 +196,11 @@ impl Global {
             if let Some(mut bag) = bags.try_pop(guard)? {
                 // Disposes the garbages (except for hazard pointers) in the bag popped from the
                 // global queue.
-                bag.dispose(summary);
+                let disposed = bag.dispose(summary);
+
+                if let Some(local) = unsafe { guard.local.as_ref() } {
+                    local.inc_reclaimed(disposed);
+                }
 
                 // If the bag is not empty (due to hazard pointers), push it back to the global
                 // queue.
@@ -384,11 +389,20 @@ pub struct Local {
 
     /// Total number of pinnings performed.
     ///
-    /// This is just an auxilliary counter that sometimes kicks off collection.
+    /// This is just an auxiliary counter that sometimes kicks off collection.
     pin_count: Cell<Wrapping<usize>>,
 
     /// The set of hazard pointers.
     pub(crate) hazards: HazardSet,
+
+    /// The number of blocks retired by this thread.
+    retired: Cell<usize>,
+    /// The number of blocks reclaimed by this thread. Note that a block retired from a thread can
+    /// be reclaimed by another thread. That is, `retired - reclaimed` can be negative and doesn't
+    /// mean "locally retired but not yet reclaimed". However, the average (w.r.t num of threads)
+    /// of thread-local average of `retired - reclaimed` at each op does make sense to be used as a
+    /// space overhead criterion.
+    reclaimed: Cell<usize>,
 }
 
 impl Local {
@@ -416,6 +430,8 @@ impl Local {
                 guard_count: Cell::new(0),
                 handle_count: Cell::new(1),
                 pin_count: Cell::new(Wrapping(0)),
+                retired: Cell::new(0),
+                reclaimed: Cell::new(0),
             })
             .into_shared(unprotected());
             collector.global.locals.insert(local);
@@ -423,6 +439,22 @@ impl Local {
                 local: local.as_raw(),
             }
         }
+    }
+
+    pub fn inc_retired(&self, ammount: usize) {
+        let retired = self.retired.get();
+        self.retired.set(retired.wrapping_add(ammount));
+    }
+
+    pub fn inc_reclaimed(&self, ammount: usize) {
+        let reclaimed = self.reclaimed.get();
+        self.reclaimed.set(reclaimed.wrapping_add(ammount));
+    }
+
+    pub fn retired_unreclaimed(&self) -> i64 {
+        let retired: i64 = self.retired.get().try_into().unwrap();
+        let reclaimed: i64 = self.reclaimed.get().try_into().unwrap();
+        retired - reclaimed
     }
 
     /// Returns a reference to the `Global` in which this `Local` resides.

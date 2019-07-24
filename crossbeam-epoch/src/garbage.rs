@@ -60,6 +60,10 @@ impl Bag {
         self.garbages.is_empty()
     }
 
+    pub fn len(&self) -> usize {
+        self.garbages.len()
+    }
+
     /// Attempts to insert a deferred function into the bag.
     ///
     /// Returns `Ok(())` if successful, and `Err(deferred)` for the given `deferred` if the bag is
@@ -73,7 +77,9 @@ impl Bag {
     }
 
     /// Disposes the bag except for hazard pointers.
-    pub fn dispose(&mut self, hazards: Option<&BloomFilter>) {
+    /// Returns the number of disposed garbages.
+    pub fn dispose(&mut self, hazards: Option<&BloomFilter>) -> usize {
+        let num_garbages = self.len();
         let hazards = self
             .garbages
             .drain(..)
@@ -87,6 +93,7 @@ impl Bag {
             })
             .collect::<ArrayVec<_>>();
         self.garbages = hazards;
+        num_garbages - self.len()
     }
 }
 

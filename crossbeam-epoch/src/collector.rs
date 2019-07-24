@@ -13,6 +13,7 @@
 /// handle.pin().flush();
 /// ```
 use alloc::sync::Arc;
+use core::convert::TryInto;
 use core::fmt;
 
 use guard::Guard;
@@ -85,6 +86,10 @@ impl LocalHandle {
     #[inline]
     pub fn collector(&self) -> &Collector {
         unsafe { (*self.local).collector() }
+    }
+
+    pub fn retired_unreclaimed(&self) -> i64 {
+        unsafe { (*self.local).retired_unreclaimed() }
     }
 }
 

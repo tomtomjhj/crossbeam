@@ -36,11 +36,11 @@
 //! destroyed as soon as the data structure gets dropped.
 
 use core::cell::{Cell, UnsafeCell};
+use core::convert::TryInto;
 use core::mem::{self, ManuallyDrop};
 use core::num::Wrapping;
 use core::ptr;
-use core::sync::atomic::Ordering;
-use core::sync::atomic::{self, AtomicUsize};
+use core::sync::atomic::{self, Ordering};
 
 use arrayvec::ArrayVec;
 use crossbeam_utils::CachePadded;
@@ -140,10 +140,6 @@ pub struct Global {
 
     /// The global epoch.
     pub(crate) epoch: CachePadded<AtomicEpoch>,
-
-    ///
-    retired: AtomicUsize,
-    reclaimed: AtomicUsize,
 }
 
 impl Global {
@@ -157,24 +153,7 @@ impl Global {
             locals: List::new(),
             queue: Queue::new(),
             epoch: CachePadded::new(AtomicEpoch::new(Epoch::starting())),
-            retired: AtomicUsize::new(0),
-            reclaimed: AtomicUsize::new(0),
         }
-    }
-
-    pub fn report(&self) {
-        let retired = self.retired.load(Ordering::SeqCst);
-        let reclaimed = self.reclaimed.load(Ordering::SeqCst);
-        println!(
-            "retired: {}\nunreclaimed: {}",
-            retired,
-            retired.wrapping_sub(reclaimed)
-        );
-    }
-
-    pub fn add_local_report(&self, retired: usize, reclaimed: usize) {
-        self.retired.fetch_add(retired, Ordering::Relaxed);
-        self.reclaimed.fetch_add(reclaimed, Ordering::Relaxed);
     }
 
     /// Pushes the bag into the global queue and replaces the bag with a new empty bag.
@@ -294,10 +273,16 @@ pub struct Local {
 
     /// Total number of pinnings performed.
     ///
-    /// This is just an auxilliary counter that sometimes kicks off collection.
+    /// This is just an auxiliary counter that sometimes kicks off collection.
     pin_count: Cell<Wrapping<usize>>,
 
+    /// The number of blocks retired by this thread.
     retired: Cell<usize>,
+    /// The number of blocks reclaimed by this thread. Note that a block retired from a thread can
+    /// be reclaimed by another thread. That is, `retired - reclaimed` can be negative and doesn't
+    /// mean "locally retired but not yet reclaimed". However, the average (w.r.t num of threads)
+    /// of thread-local average of `retired - reclaimed` at each op does make sense to be used as a
+    /// space overhead criterion.
     reclaimed: Cell<usize>,
 }
 
@@ -338,6 +323,12 @@ impl Local {
     pub fn inc_reclaimed(&self, ammount: usize) {
         let reclaimed = self.reclaimed.get();
         self.reclaimed.set(reclaimed.wrapping_add(ammount));
+    }
+
+    pub fn retired_unreclaimed(&self) -> i64 {
+        let retired: i64 = self.retired.get().try_into().unwrap();
+        let reclaimed: i64 = self.reclaimed.get().try_into().unwrap();
+        retired - reclaimed
     }
 
     /// Returns a reference to the `Global` in which this `Local` resides.
@@ -503,9 +494,6 @@ impl Local {
     fn finalize(&self) {
         debug_assert_eq!(self.guard_count.get(), 0);
         debug_assert_eq!(self.handle_count.get(), 0);
-
-        self.global()
-            .add_local_report(self.retired.get(), self.reclaimed.get());
 
         // Temporarily increment handle count. This is required so that the following call to `pin`
         // doesn't call `finalize` again.

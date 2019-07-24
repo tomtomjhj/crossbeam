@@ -13,6 +13,7 @@
 /// handle.pin().flush();
 /// ```
 use alloc::sync::Arc;
+use core::convert::TryInto;
 use core::fmt;
 
 use guard::Guard;
@@ -37,11 +38,6 @@ impl Collector {
     /// Registers a new handle for the collector.
     pub fn register(&self) -> LocalHandle {
         Local::register(self)
-    }
-
-    /// Reports the number of blocks that are retired but not reclaimed yet.
-    pub fn report_retire_unreclaimed(&self) {
-        self.global.report();
     }
 }
 
@@ -90,6 +86,10 @@ impl LocalHandle {
     #[inline]
     pub fn collector(&self) -> &Collector {
         unsafe { (*self.local).collector() }
+    }
+
+    pub fn retired_unreclaimed(&self) -> i64 {
+        unsafe { (*self.local).retired_unreclaimed() }
     }
 }
 

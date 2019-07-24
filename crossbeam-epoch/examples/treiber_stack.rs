@@ -5,7 +5,7 @@ use std::mem::ManuallyDrop;
 use std::ptr;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
-use epoch::{Atomic, Owned, default_collector};
+use epoch::{Atomic, Owned};
 use utils::thread::scope;
 
 /// Treiber's lock-free stack.
@@ -118,5 +118,4 @@ fn main() {
 
     assert!(stack.pop().is_none());
 
-    default_collector().report_retire_unreclaimed();
 }

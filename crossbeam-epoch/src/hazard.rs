@@ -291,10 +291,10 @@ impl<'g> Iterator for HazardSetIter<'g> {
     }
 }
 
-/// TODO
+/// The errors occuring when a shield defends a local pointer.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ShieldError {
-    /// TODO
+    /// Defense fails because the thread is ejected.
     Ejected,
 }
 

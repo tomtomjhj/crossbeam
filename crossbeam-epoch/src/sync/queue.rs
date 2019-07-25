@@ -95,7 +95,7 @@ impl<T> Queue<T> {
             next: Atomic::null(),
         })
         .into_shared(guard);
-        let mut tail = Shield::null(guard)?;
+        let mut tail = Shield::null(guard);
 
         loop {
             // We push onto the tail, so we'll start optimistically by looking there first.
@@ -145,7 +145,7 @@ impl<T> Queue<T> {
     /// Returns `None` if the queue is observed to be empty.
     #[must_use]
     pub fn try_pop(&self, guard: &Guard) -> Result<Option<T>, ShieldError> {
-        let mut shield = Shield::null(guard)?;
+        let mut shield = Shield::null(guard);
         loop {
             if let Ok(head) = self.pop_internal(&mut shield, guard)? {
                 return Ok(head);
@@ -198,8 +198,13 @@ mod test {
         }
 
         pub fn try_pop(&self) -> Option<T> {
-            let guard = &pin();
-            self.queue.try_pop(guard)
+            let mut guard = pin();
+            loop {
+                match self.queue.try_pop(&guard) {
+                    Ok(r) => return r,
+                    Err(ShieldError::Ejected) => guard.repin(),
+                }
+            }
         }
 
         pub fn pop(&self) -> T {

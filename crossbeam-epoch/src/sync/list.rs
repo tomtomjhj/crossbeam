@@ -342,10 +342,10 @@ impl<'g, T: 'g, C: IsElement<T>> Iterator for Iter<'g, T, C> {
                             if e.current.is_null() {
                                 self.curr.release();
                             } else {
-                                if let Err(e) = self
-                                    .curr
-                                    .defend(unsafe { element_of_shared::<T, C>(e.current) }, self.guard)
-                                {
+                                if let Err(e) = self.curr.defend(
+                                    unsafe { element_of_shared::<T, C>(e.current) },
+                                    self.guard,
+                                ) {
                                     return Some(Err(IterError::ShieldError(e)));
                                 }
                             }
@@ -558,57 +558,71 @@ mod tests {
         assert!(iter.next().is_none());
     }
 
-    // PR(@jeehoonkang): restore it
-    //
-    // /// Contends the list on iteration to make sure that it can be iterated over concurrently.
-    // #[test]
-    // fn iter_multi() {
-    //     let collector = Collector::new();
+    /// Contends the list on iteration to make sure that it can be iterated over concurrently.
+    #[test]
+    fn iter_multi() {
+        let collector = Collector::new();
 
-    //     let l: List<Entry> = List::new();
-    //     let b = Barrier::new(THREADS);
+        let l: List<Entry> = List::new();
+        let b = Barrier::new(THREADS);
 
-    //     thread::scope(|s| {
-    //         for _ in 0..THREADS {
-    //             s.spawn(|_| {
-    //                 b.wait();
+        thread::scope(|s| {
+            for _ in 0..THREADS {
+                s.spawn(|_| {
+                    b.wait();
 
-    //                 let handle = collector.register();
-    //                 let guard: Guard = handle.pin();
-    //                 let mut v = Vec::with_capacity(ITERS);
+                    let handle = collector.register();
+                    let guard: Guard = handle.pin();
+                    let mut v = Vec::with_capacity(ITERS);
 
-    //                 for _ in 0..ITERS {
-    //                     let e = Owned::new(Entry::default()).into_shared(&guard);
-    //                     v.push(e);
-    //                     unsafe {
-    //                         l.insert(e);
-    //                     }
-    //                 }
+                    for _ in 0..ITERS {
+                        let e = Owned::new(Entry::default()).into_shared(&guard);
+                        v.push(e);
+                        unsafe {
+                            l.insert(e);
+                        }
+                    }
 
-    //                 let mut pred = Shield::null(&guard);
-    //                 let mut curr = Shield::null(&guard);
-    //                 let mut iter = l.iter(&mut pred, &mut curr, &guard).unwrap();
+                    fn f(
+                        l: &List<Entry>,
+                        pred: &mut Shield<Entry>,
+                        curr: &mut Shield<Entry>,
+                        guard: &Guard,
+                    ) -> Result<(), ShieldError> {
+                        let mut iter = l.iter(pred, curr, true, &guard)?;
 
-    //                 for _ in 0..ITERS {
-    //                     assert!(iter.next().is_some());
-    //                 }
+                        for _ in 0..ITERS {
+                            match iter.next() {
+                                Some(Ok(_)) => {}
+                                Some(Err(IterError::Stalled)) => break,
+                                Some(Err(IterError::ShieldError(e))) => return Err(e),
+                                None => panic!("Not enough elements"),
+                            }
+                        }
 
-    //                 for e in v {
-    //                     unsafe {
-    //                         e.as_ref().unwrap().delete();
-    //                     }
-    //                 }
-    //             });
-    //         }
-    //     })
-    //     .unwrap();
+                        Ok(())
+                    }
 
-    //     let handle = collector.register();
-    //     let guard = handle.pin();
+                    let mut pred = Shield::null(&guard);
+                    let mut curr = Shield::null(&guard);
+                    while let Err(_) = f(&l, &mut pred, &mut curr, &guard) {}
 
-    //     let mut pred = Shield::null(&guard);
-    //     let mut curr = Shield::null(&guard);
-    //     let mut iter = l.iter(&mut pred, &mut curr, &guard).unwrap();
-    //     assert!(iter.next().is_none());
-    // }
+                    for e in v {
+                        unsafe {
+                            e.as_ref().unwrap().delete();
+                        }
+                    }
+                });
+            }
+        })
+        .unwrap();
+
+        let handle = collector.register();
+        let guard = handle.pin();
+
+        let mut pred = Shield::null(&guard);
+        let mut curr = Shield::null(&guard);
+        let mut iter = l.iter(&mut pred, &mut curr, true, &guard).unwrap();
+        assert!(iter.next().is_none());
+    }
 }

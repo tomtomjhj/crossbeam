@@ -1,4 +1,3 @@
-use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::mem;
 use core::ptr;
@@ -159,19 +158,18 @@ impl Iterator for HazardNodeIter {
 /// Set of hazard pointers represented as a linked list.
 #[derive(Debug)]
 pub struct HazardSet {
-    pred: UnsafeCell<Shield<HazardNode>>,
-    curr: UnsafeCell<Shield<HazardNode>>,
-    list: List<HazardNode>,
+    inner: List<HazardNode>,
 }
 
 impl Drop for HazardSet {
     fn drop(&mut self) {
         unsafe {
             let guard = unprotected();
-
+            let mut pred = Shield::null(guard);
+            let mut curr = Shield::null(guard);
             for node in self
-                .list
-                .iter(&mut *self.pred.get(), &mut *self.curr.get(), guard)
+                .inner
+                .iter(&mut pred, &mut curr, true, guard)
                 .unwrap()
             {
                 let node = &*(node.unwrap());
@@ -184,22 +182,8 @@ impl Drop for HazardSet {
 impl HazardSet {
     /// Creates a new hazard set.
     pub fn new() -> Self {
-        unsafe {
-            let guard = unprotected();
-
-            let node = Owned::new(HazardNode::new());
-            let index1 = node.acquire(0).unwrap();
-            let index2 = node.acquire(0).unwrap();
-            let node = node.into_shared(guard);
-
-            let list = List::new();
-            list.insert(node);
-
-            Self {
-                pred: UnsafeCell::new(Shield::from_raw(node.as_raw(), index1)),
-                curr: UnsafeCell::new(Shield::from_raw(node.as_raw(), index2)),
-                list,
-            }
+        Self {
+            inner: List::new(),
         }
     }
 
@@ -209,10 +193,11 @@ impl HazardSet {
         &'g self,
         pred: &'g mut Shield<HazardNode>,
         curr: &'g mut Shield<HazardNode>,
+        is_detaching: bool,
         guard: &'g Guard,
     ) -> Result<HazardSetIter<'g>, ShieldError> {
         Ok(HazardSetIter {
-            list_iter: self.list.iter(pred, curr, guard)?,
+            list_iter: self.inner.iter(pred, curr, is_detaching, guard)?,
             node_iter: HazardNodeIter::empty(),
         })
     }
@@ -222,9 +207,14 @@ impl HazardSet {
         data: usize,
         guard: &Guard,
     ) -> Result<(*const HazardNode, usize), IterError> {
+        // It is safe not to protect the traversal of hazard lists because the other threads do not
+        // detach and `defer_destroy` those nodes marked as deleted.
+        let mut pred = Shield::null(unprotected());
+        let mut curr = Shield::null(unprotected());
+
         for node in self
-            .list
-            .iter(&mut *self.pred.get(), &mut *self.curr.get(), guard)
+            .inner
+            .iter(&mut pred, &mut curr, true, guard)
             .map_err(|e| IterError::ShieldError(e))?
         {
             let node = node?;
@@ -236,7 +226,7 @@ impl HazardSet {
         let new = HazardNode::new();
         let index = new.acquire(data).unwrap();
         let new = Owned::new(HazardNode::new()).into_shared(guard);
-        self.list.insert(new);
+        self.inner.insert(new);
         Ok((new.as_raw(), index))
     }
 
@@ -250,21 +240,21 @@ impl HazardSet {
         &self,
         data: usize,
         guard: &Guard,
-    ) -> Result<(*const HazardNode, usize), ShieldError> {
-        repeat_iter(|| self.acquire_inner(data, guard))
+    ) -> (*const HazardNode, usize) {
+        repeat_iter(|| self.acquire_inner(data, guard)).unwrap()
     }
 
     /// Creates an approximate summary of the hazard set.
     #[inline]
-    pub fn make_summary(&self, guard: &Guard) -> Result<Option<BloomFilter>, IterError> {
+    pub fn make_summary(&self, is_curr_thread: bool, guard: &Guard) -> Result<Option<BloomFilter>, IterError> {
         let mut visited = false;
         let mut filter = BloomFilter::new();
 
-        let mut pred = Shield::null(guard).map_err(|e| IterError::ShieldError(e))?;
-        let mut curr = Shield::null(guard).map_err(|e| IterError::ShieldError(e))?;
+        let mut pred = Shield::null(guard);
+        let mut curr = Shield::null(guard);
 
         for hazard in self
-            .iter(&mut pred, &mut curr, guard)
+            .iter(&mut pred, &mut curr, is_curr_thread, guard)
             .map_err(|e| IterError::ShieldError(e))?
         {
             filter.insert(hazard?);
@@ -354,7 +344,7 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Creates a shield to the heap-allocated object.
-    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard).unwrap();
+    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard);
     ///
     /// // Drop the guard.
     /// drop(guard);
@@ -369,7 +359,7 @@ impl<T> Shield<T> {
     /// [`unprotected`]: fn.unprotected.html
     /// [`Shield`]: struct.Shield.html
     #[must_use]
-    pub fn new<'g>(ptr: Shared<'g, T>, guard: &Guard) -> Result<Self, ShieldError> {
+    pub fn new<'g>(ptr: Shared<'g, T>, guard: &Guard) -> Self {
         let data = ptr.into_usize();
 
         if let Some(local) = unsafe { guard.local.as_ref() } {
@@ -377,23 +367,23 @@ impl<T> Shield<T> {
             local.acquire_handle();
 
             let (node, index) =
-                unsafe { local.hazards.acquire(data_with_tag::<T>(data, 0), guard)? };
+                unsafe { local.hazards.acquire(data_with_tag::<T>(data, 0), guard) };
 
-            Ok(Self {
+            Self {
                 data,
                 local,
                 node,
                 index,
                 _marker: PhantomData,
-            })
+            }
         } else {
-            Ok(Self {
+            Self {
                 data,
                 local: ptr::null(),
                 node: ptr::null(),
                 index: 0,
                 _marker: PhantomData,
-            })
+            }
         }
     }
 
@@ -403,18 +393,8 @@ impl<T> Shield<T> {
     ///
     /// [`Shield::new`]: struct.Shield.html#method.new
     #[must_use]
-    pub fn null<'g>(guard: &Guard) -> Result<Self, ShieldError> {
+    pub fn null<'g>(guard: &Guard) -> Self {
         Self::new(Shared::null(), guard)
-    }
-
-    pub(crate) unsafe fn from_raw(node: *const HazardNode, index: usize) -> Self {
-        Self {
-            data: 0,
-            local: ptr::null(),
-            node,
-            index,
-            _marker: PhantomData,
-        }
     }
 
     /// Converts the pointer to a raw pointer (without the tag).
@@ -434,7 +414,7 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Create a new shield.
-    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard).unwrap();
+    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard);
     ///
     /// // Drop the guard.
     /// drop(guard);
@@ -465,7 +445,7 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Create a new shield.
-    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard).unwrap();
+    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard);
     ///
     /// // Drop the guard.
     /// drop(guard);
@@ -499,7 +479,7 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Create a new shield.
-    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard).unwrap();
+    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard);
     ///
     /// // Drop the guard.
     /// drop(guard);
@@ -527,7 +507,7 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Create a new shield.
-    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard).unwrap();
+    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard);
     ///
     /// // Drop the guard.
     /// drop(guard);
@@ -556,7 +536,7 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Create a new shield.
-    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard).unwrap();
+    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard);
     ///
     /// // Drop the guard.
     /// drop(guard);
@@ -589,10 +569,10 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Create a new shield.
-    /// let mut shield = Shield::null(&guard).unwrap();
+    /// let mut shield = Shield::null(&guard);
     ///
     /// // Defend the heap-allocated object.
-    /// shield.defend(a.load(SeqCst, &guard), &guard).unwrap();
+    /// shield.defend(a.load(SeqCst, &guard), &guard);
     ///
     /// // Drop the guard.
     /// drop(guard);
@@ -642,7 +622,7 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Create a shield to the heap-allocated object.
-    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard).unwrap();
+    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard);
     ///
     /// // Releases the shield.
     /// shield.release();

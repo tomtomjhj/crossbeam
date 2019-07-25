@@ -54,7 +54,7 @@ impl<T> Stack<T> {
     /// Returns `None` if the stack is empty.
     #[must_use]
     pub fn try_pop(&self, guard: &Guard) -> Result<Option<T>, ShieldError> {
-        let mut head_shield = Shield::null(guard)?;
+        let mut head_shield = Shield::null(guard);
 
         loop {
             let head = self.head.load(Acquire, guard);

@@ -122,6 +122,9 @@ pub struct Iter<'g, T: 'g, C: IsElement<T>> {
     /// The current entry.
     curr: &'g mut Shield<T>,
 
+    /// Whether to detach and `defer_destroy` those nodes marked as deleted.
+    is_detaching: bool,
+
     /// Whether the iteration was stalled due to lost race.
     is_stalled: bool,
 
@@ -174,6 +177,7 @@ impl Entry {
         &'g self,
         pred: &'g mut Shield<T>,
         curr: &'g mut Shield<T>,
+        is_detaching: bool,
         guard: &'g Guard,
     ) -> Result<Iter<'g, T, C>, ShieldError> {
         pred.defend(Shared::from(C::element_of(self) as *const _), guard)?;
@@ -186,6 +190,7 @@ impl Entry {
             guard,
             pred,
             curr,
+            is_detaching,
             is_stalled: false,
             _marker: PhantomData,
         })
@@ -255,11 +260,12 @@ impl<T, C: IsElement<T>> List<T, C> {
         &'g self,
         pred: &'g mut Shield<T>,
         curr: &'g mut Shield<T>,
+        is_detaching: bool,
         guard: &'g Guard,
     ) -> Result<Iter<'g, T, C>, ShieldError> {
         unsafe {
             // @PR(jeehoonkang): document why it's safe.
-            self.head.iter(pred, curr, guard)
+            self.head.iter(pred, curr, is_detaching, guard)
         }
     }
 }
@@ -439,10 +445,10 @@ mod tests {
             l.insert(e3);
         }
 
-        let mut pred = Shield::null(&guard).unwrap();
-        let mut curr = Shield::null(&guard).unwrap();
+        let mut pred = Shield::null(&guard);
+        let mut curr = Shield::null(&guard);
 
-        let mut iter = l.iter(&mut pred, &mut curr, &guard).unwrap();
+        let mut iter = l.iter(&mut pred, &mut curr, true, &guard).unwrap();
         let maybe_e3 = iter.next();
         assert!(maybe_e3.is_some());
         assert!(maybe_e3.unwrap().unwrap() as *const Entry == e3.as_raw());
@@ -481,11 +487,11 @@ mod tests {
             e2.as_ref().unwrap().delete();
         }
 
-        let mut pred = Shield::null(&guard).unwrap();
-        let mut curr = Shield::null(&guard).unwrap();
+        let mut pred = Shield::null(&guard);
+        let mut curr = Shield::null(&guard);
 
         {
-            let mut iter = l.iter(&mut pred, &mut curr, &guard).unwrap();
+            let mut iter = l.iter(&mut pred, &mut curr, true, &guard).unwrap();
             let maybe_e3 = iter.next();
             assert!(maybe_e3.is_some());
             assert!(maybe_e3.unwrap().unwrap() as *const Entry == e3.as_raw());
@@ -500,7 +506,7 @@ mod tests {
             e3.as_ref().unwrap().delete();
         }
 
-        let mut iter = l.iter(&mut pred, &mut curr, &guard).unwrap();
+        let mut iter = l.iter(&mut pred, &mut curr, true, &guard).unwrap();
         assert!(iter.next().is_none());
     }
 
@@ -545,10 +551,10 @@ mod tests {
         let handle = collector.register();
         let guard = handle.pin();
 
-        let mut pred = Shield::null(&guard).unwrap();
-        let mut curr = Shield::null(&guard).unwrap();
+        let mut pred = Shield::null(&guard);
+        let mut curr = Shield::null(&guard);
 
-        let mut iter = l.iter(&mut pred, &mut curr, &guard).unwrap();
+        let mut iter = l.iter(&mut pred, &mut curr, true, &guard).unwrap();
         assert!(iter.next().is_none());
     }
 
@@ -579,8 +585,8 @@ mod tests {
     //                     }
     //                 }
 
-    //                 let mut pred = Shield::null(&guard).unwrap();
-    //                 let mut curr = Shield::null(&guard).unwrap();
+    //                 let mut pred = Shield::null(&guard);
+    //                 let mut curr = Shield::null(&guard);
     //                 let mut iter = l.iter(&mut pred, &mut curr, &guard).unwrap();
 
     //                 for _ in 0..ITERS {
@@ -600,8 +606,8 @@ mod tests {
     //     let handle = collector.register();
     //     let guard = handle.pin();
 
-    //     let mut pred = Shield::null(&guard).unwrap();
-    //     let mut curr = Shield::null(&guard).unwrap();
+    //     let mut pred = Shield::null(&guard);
+    //     let mut curr = Shield::null(&guard);
     //     let mut iter = l.iter(&mut pred, &mut curr, &guard).unwrap();
     //     assert!(iter.next().is_none());
     // }

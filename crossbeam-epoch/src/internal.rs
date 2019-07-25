@@ -179,7 +179,7 @@ impl Global {
         status: Shared<'g, CachePadded<BloomFilter>>,
         guard: &'g Guard,
     ) -> Result<bool, ShieldError> {
-        let shield = Shield::new(status, guard)?;
+        let shield = Shield::new(status, guard);
         let summary = unsafe { shield.as_ref() }.map(Deref::deref);
 
         let flags = StatusFlags::from_bits_truncate(status.tag());
@@ -255,14 +255,14 @@ impl Global {
 
         let mut new_summary = BloomFilter::new();
         {
-            let mut local_summary = Shield::null(guard)?;
-            let mut pred = Shield::null(guard)?;
-            let mut curr = Shield::null(guard)?;
+            let mut local_summary = Shield::null(guard);
+            let mut pred = Shield::null(guard);
+            let mut curr = Shield::null(guard);
 
             // TODO(stjepang): `Local`s are stored in a linked list because linked lists are fairly easy
             // to implement in a lock-free manner. However, traversal can be slow due to cache misses
             // and data dependencies. We should experiment with other data structures as well.
-            for local in self.locals.iter(&mut pred, &mut curr, guard)? {
+            for local in self.locals.iter(&mut pred, &mut curr, true, guard)? {
                 match local {
                     Err(IterError::Stalled) => {
                         // A concurrent thread stalled this iteration. That thread might also try to
@@ -335,7 +335,7 @@ impl Global {
             .with_tag(new_flags.bits());
 
         // Protects the old global summary so that it cannot be reused.
-        let _shield = Shield::new(global_status, guard)?;
+        let _shield = Shield::new(global_status, guard);
 
         // Tries to replace the global status.
         match self
@@ -607,7 +607,7 @@ impl Local {
                 // Unpins `self` if it's not already unpinned.
                 if flags.is_pinned() {
                     // Creates a summary of the set of hazard pointers.
-                    let new_status = repeat_iter(|| self.hazards.make_summary(guard))
+                    let new_status = repeat_iter(|| self.hazards.make_summary(true, guard))
                         // `ShieldError` is impossible with the `unprotected()` guard.
                         .unwrap()
                         .map(|summary| Owned::new(CachePadded::new(summary)).into_shared(guard))
@@ -724,10 +724,10 @@ impl Local {
         );
 
         // Shields the current status to prevent the ABA problem.
-        let _shield = Shield::new(status, guard)?;
+        let _shield = Shield::new(status, guard);
 
         // Creates a summary of the set of hazard pointers.
-        let new_status = repeat_iter(|| self.hazards.make_summary(&guard))?
+        let new_status = repeat_iter(|| self.hazards.make_summary(false, &guard))?
             .map(|summary| Owned::new(CachePadded::new(summary)).into_shared(&guard))
             .unwrap_or_else(|| Shared::null())
             .with_tag(StatusFlags::new(true, false, flags.epoch()).bits());

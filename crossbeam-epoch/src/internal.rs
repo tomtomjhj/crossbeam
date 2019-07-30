@@ -325,11 +325,8 @@ impl Global {
             return Ok(());
         }
 
-        // Collects the old garbage bags.
-        if !self.collect_inner(global_status, guard)? {
-            // There are remaining old garbage bags. We cannot advance the global epoch just yet.
-            return Ok(());
-        }
+        // Collects all the old garbage bags.
+        while !self.collect_inner(global_status, guard)? {}
 
         // All pinned participants were pinned in the current global epoch, and we have removed all
         // the old garbages. Now let's advance the global epoch. First, calculates the new global
@@ -408,7 +405,7 @@ pub struct Local {
 impl Local {
     /// Number of pinnings after which a participant will execute some deferred functions from the
     /// global queue.
-    const PINNINGS_BETWEEN_COLLECT: usize = 32;
+    const PINNINGS_BETWEEN_COLLECT: usize = 128;
 
     /// Number of pinnings after which a participant will try to advance the global epoch.
     const PINNINGS_BETWEEN_TRY_ADVANCE: usize = 1024;

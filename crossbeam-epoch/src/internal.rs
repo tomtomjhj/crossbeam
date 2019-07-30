@@ -599,19 +599,17 @@ impl Local {
             let pin_count = self.pin_count.get();
             self.pin_count.set(pin_count + Wrapping(1));
 
+            // After every `PINNINGS_BETWEEN_COLLECT` try advancing the global epoch.
+            if pin_count.0 % Self::PINNINGS_BETWEEN_TRY_ADVANCE == 0 {
+                let global_flags = StatusFlags::from_bits_truncate(global_status.tag());
+                let is_forcing = pin_count.0 % Self::PINNINGS_BETWEEN_FORCE_ADVANCE == 0;
+                let _ = self
+                    .global()
+                    .advance(global_flags.epoch(), is_forcing, &guard);
+            }
             // After every `PINNINGS_BETWEEN_COLLECT` try collecting some old garbage bags.
-            if pin_count.0 % Self::PINNINGS_BETWEEN_COLLECT == 0 {
-                // If all old garbage bags are collected...
-                if self.global().collect_inner(global_status, &guard) == Ok(true) {
-                    // After every `PINNINGS_BETWEEN_COLLECT` try advancing the global epoch.
-                    if pin_count.0 % Self::PINNINGS_BETWEEN_TRY_ADVANCE == 0 {
-                        let global_flags = StatusFlags::from_bits_truncate(global_status.tag());
-                        let is_forcing = pin_count.0 % Self::PINNINGS_BETWEEN_FORCE_ADVANCE == 0;
-                        let _ = self
-                            .global()
-                            .advance(global_flags.epoch(), is_forcing, &guard);
-                    }
-                }
+            else if pin_count.0 % Self::PINNINGS_BETWEEN_COLLECT == 0 {
+                let _ = self.global().collect_inner(global_status, &guard);
             }
         }
 

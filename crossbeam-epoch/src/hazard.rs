@@ -215,7 +215,7 @@ impl HazardSet {
         for node in self
             .inner
             .iter(&mut pred, &mut curr, true, guard)
-            .map_err(|e| IterError::ShieldError(e))?
+            .map_err(IterError::ShieldError)?
         {
             let node = node?;
             if let Some(index) = (*node).acquire(data) {
@@ -236,6 +236,7 @@ impl HazardSet {
     ///
     /// The caller should be the "owner" of this set.
     #[must_use]
+    #[inline]
     pub unsafe fn acquire(
         &self,
         data: usize,
@@ -255,7 +256,7 @@ impl HazardSet {
 
         for hazard in self
             .iter(&mut pred, &mut curr, is_curr_thread, guard)
-            .map_err(|e| IterError::ShieldError(e))?
+            .map_err(IterError::ShieldError)?
         {
             filter.insert(hazard?);
             visited = true;
@@ -313,8 +314,10 @@ impl<T> Drop for Shield<T> {
         unsafe {
             if let Some(node) = self.node.as_ref() {
                 if node.release(self.index) {
+                    // HACK(@jeehoonkang): we really need to shrink HP slots...
+                    //
                     // The hazard node becomes empty. Deletes it.
-                    HazardNode::entry_of(node).delete();
+                    // HazardNode::entry_of(node).delete();
                 }
             }
 

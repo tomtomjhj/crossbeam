@@ -173,6 +173,7 @@ impl Entry {
     ///
     /// PR(@jeehoonkang): document it
     #[must_use]
+    #[inline]
     pub unsafe fn iter<'g, T, C: IsElement<T>>(
         &'g self,
         pred: &'g mut Shield<T>,

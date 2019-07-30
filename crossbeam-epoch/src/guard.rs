@@ -534,7 +534,7 @@ impl fmt::Debug for Guard {
 /// [`Atomic`]: struct.Atomic.html
 /// [`defer`]: struct.Guard.html#method.defer
 #[inline]
-pub unsafe fn unprotected() -> &'static Guard {
+pub unsafe fn unprotected() -> &'static mut Guard {
     // HACK(stjepang): An unprotected guard is just a `Guard` with its field `local` set to null.
     // Since this function returns a `'static` reference to a `Guard`, we must return a reference
     // to a global guard. However, it's not possible to create a `static` `Guard` because it does
@@ -542,5 +542,5 @@ pub unsafe fn unprotected() -> &'static Guard {
     // zero and then transmute it into a `Guard`. This is safe because `usize` and `Guard`
     // (consisting of a single pointer) have the same representation in memory.
     static UNPROTECTED: usize = 0;
-    &*(&UNPROTECTED as *const _ as *const Guard)
+    &mut *(&UNPROTECTED as *const _ as *const _ as *mut Guard)
 }

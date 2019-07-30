@@ -405,7 +405,7 @@ pub struct Local {
 impl Local {
     /// Number of pinnings after which a participant will execute some deferred functions from the
     /// global queue.
-    const PINNINGS_BETWEEN_COLLECT: usize = 128;
+    const PINNINGS_BETWEEN_COLLECT: usize = 32;
 
     /// Number of pinnings after which a participant will try to advance the global epoch.
     const PINNINGS_BETWEEN_TRY_ADVANCE: usize = 1024;

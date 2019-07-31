@@ -405,13 +405,13 @@ pub struct Local {
 impl Local {
     /// Number of pinnings after which a participant will execute some deferred functions from the
     /// global queue.
-    const PINNINGS_BETWEEN_COLLECT: usize = 32;
+    const PINNINGS_BETWEEN_COLLECT: usize = 8;
 
     /// Number of pinnings after which a participant will try to advance the global epoch.
-    const PINNINGS_BETWEEN_TRY_ADVANCE: usize = 1024;
+    const PINNINGS_BETWEEN_TRY_ADVANCE: usize = 256;
 
     /// Number of pinnings after which a participant will is_forcing to advance the global epoch.
-    const PINNINGS_BETWEEN_FORCE_ADVANCE: usize = 128 * 1024;
+    const PINNINGS_BETWEEN_FORCE_ADVANCE: usize = 128 * 256;
 
     /// Registers a new `Local` in the provided `Global`.
     pub fn register(collector: &Collector) -> LocalHandle {

@@ -456,8 +456,6 @@ impl fmt::Debug for Guard {
 /// Note that calling [`defer`] with a dummy guard will not defer the function - it will just
 /// execute the function immediately.
 ///
-/// If necessary, it's possible to create more dummy guards by cloning: `unprotected().clone()`.
-///
 /// # Safety
 ///
 /// Loading and dereferencing data from an [`Atomic`] using this guard is safe only if the
@@ -475,10 +473,7 @@ impl fmt::Debug for Guard {
 ///     // Load `a` without pinning the current thread.
 ///     a.load(Relaxed, epoch::unprotected());
 ///
-///     // It's possible to create more dummy guards by calling `clone()`.
-///     let dummy = &epoch::unprotected().clone();
-///
-///     dummy.defer(move || {
+///     epoch::unprotected().defer(move || {
 ///         println!("This gets executed immediately.");
 ///     });
 ///

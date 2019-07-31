@@ -88,6 +88,7 @@ bitflags! {
 }
 
 impl StatusFlags {
+    #[inline(always)]
     pub fn new(is_ejecting: bool, is_pinned: bool, epoch: usize) -> Self {
         debug_assert!(
             StatusFlags::all().bits() <= low_bits::<CachePadded<BloomFilter>>(),
@@ -108,14 +109,17 @@ impl StatusFlags {
         is_ejecting | is_pinned | epoch
     }
 
+    #[inline(always)]
     pub fn is_ejecting(self) -> bool {
         !(self & Self::EJECTING).is_empty()
     }
 
+    #[inline(always)]
     pub fn is_pinned(self) -> bool {
         !(self & Self::PINNED).is_empty()
     }
 
+    #[inline(always)]
     pub fn epoch(self) -> usize {
         (self & Self::EPOCH).bits()
     }
@@ -150,6 +154,9 @@ impl Global {
     /// Creates a new global data for garbage collection.
     #[inline]
     pub fn new() -> Self {
+        // TODO(@jeehoonkang): it has a very ugly invariant...
+        membarrier::heavy();
+
         Self {
             locals: List::new(),
             bags: [
@@ -405,13 +412,13 @@ pub struct Local {
 impl Local {
     /// Number of pinnings after which a participant will execute some deferred functions from the
     /// global queue.
-    const PINNINGS_BETWEEN_COLLECT: usize = 32;
+    const PINNINGS_BETWEEN_COLLECT: usize = 8;
 
     /// Number of pinnings after which a participant will try to advance the global epoch.
-    const PINNINGS_BETWEEN_TRY_ADVANCE: usize = 1024;
+    const PINNINGS_BETWEEN_TRY_ADVANCE: usize = 256;
 
     /// Number of pinnings after which a participant will is_forcing to advance the global epoch.
-    const PINNINGS_BETWEEN_FORCE_ADVANCE: usize = 128 * 1024;
+    const PINNINGS_BETWEEN_FORCE_ADVANCE: usize = 128 * 256;
 
     /// Registers a new `Local` in the provided `Global`.
     pub fn register(collector: &Collector) -> LocalHandle {
@@ -474,15 +481,24 @@ impl Local {
 
     /// Returns the current epoch if `self` is not ejected yet.
     #[must_use]
+    #[inline(always)]
     pub fn get_epoch(&self, guard: &Guard) -> Result<usize, ShieldError> {
         // Light fence to synchronize with `Self::eject()`.
-        membarrier::light();
+        membarrier::light_membarrier();
 
         let local_status = self.status.load(Ordering::Relaxed, guard);
-        let local_flags = StatusFlags::from_bits_truncate(local_status.tag());
+        // let local_flags = StatusFlags::from_bits_truncate(local_status.tag());
 
-        if local_flags.is_pinned() && !local_flags.is_ejecting() {
-            Ok(local_flags.epoch())
+        // if local_flags.is_pinned() && !local_flags.is_ejecting() {
+        //     Ok(local_flags.epoch())
+
+        // HACK(@jeehoonkang): It is inside a very hot loop, but LLVM cannot optimize the above
+        // lines...
+        let tag = local_status.tag();
+        if tag & StatusFlags::PINNED.bits() != 0 &&
+            tag & StatusFlags::EJECTING.bits() == 0
+        {
+            Ok(tag & StatusFlags::EPOCH.bits())
         } else {
             Err(ShieldError::Ejected)
         }
@@ -730,7 +746,7 @@ impl Local {
         }
 
         // Heavy fence to synchronize with `Self::get_epoch()`.
-        membarrier::heavy();
+        unsafe { membarrier::heavy_membarrier(); }
 
         // Now `self` is pinned at an epoch less than `target_epoch`, and it's marked as being
         // ejected. Finishes ejecting `self`.

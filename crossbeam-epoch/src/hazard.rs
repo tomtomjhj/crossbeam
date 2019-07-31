@@ -251,8 +251,8 @@ impl HazardSet {
         let mut visited = false;
         let mut filter = BloomFilter::new();
 
-        let mut pred = Shield::null(guard);
-        let mut curr = Shield::null(guard);
+        let mut pred = Shield::null(if is_curr_thread { unsafe { unprotected() } } else { guard });
+        let mut curr = Shield::null(if is_curr_thread { unsafe { unprotected() } } else { guard });
 
         for hazard in self
             .iter(&mut pred, &mut curr, is_curr_thread, guard)
@@ -424,6 +424,7 @@ impl<T> Shield<T> {
     ///
     /// assert_eq!(shield.as_raw(), raw);
     /// ```
+    #[inline]
     pub fn as_raw(&self) -> *const T {
         let (raw, _) = decompose_data::<T>(self.data);
         raw
@@ -457,6 +458,7 @@ impl<T> Shield<T> {
     ///     assert_eq!(shield.deref(), &1234);
     /// }
     /// ```
+    #[inline]
     pub unsafe fn deref(&self) -> &T {
         &*self.as_raw()
     }
@@ -550,6 +552,7 @@ impl<T> Shield<T> {
     /// ```
     ///
     /// [`Shared`]: struct.Shared.html
+    #[inline]
     pub fn shared<'s>(&'s self) -> Shared<'s, T> {
         unsafe { Shared::from_usize(self.data) }
     }

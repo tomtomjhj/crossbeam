@@ -88,6 +88,7 @@ bitflags! {
 }
 
 impl StatusFlags {
+    #[inline(always)]
     pub fn new(is_ejecting: bool, is_pinned: bool, epoch: usize) -> Self {
         debug_assert!(
             StatusFlags::all().bits() <= low_bits::<CachePadded<BloomFilter>>(),
@@ -108,14 +109,17 @@ impl StatusFlags {
         is_ejecting | is_pinned | epoch
     }
 
+    #[inline(always)]
     pub fn is_ejecting(self) -> bool {
         !(self & Self::EJECTING).is_empty()
     }
 
+    #[inline(always)]
     pub fn is_pinned(self) -> bool {
         !(self & Self::PINNED).is_empty()
     }
 
+    #[inline(always)]
     pub fn epoch(self) -> usize {
         (self & Self::EPOCH).bits()
     }
@@ -477,15 +481,24 @@ impl Local {
 
     /// Returns the current epoch if `self` is not ejected yet.
     #[must_use]
+    #[inline(always)]
     pub fn get_epoch(&self, guard: &Guard) -> Result<usize, ShieldError> {
         // Light fence to synchronize with `Self::eject()`.
-        unsafe { membarrier::light_membarrier(); }
+        membarrier::light_membarrier();
 
         let local_status = self.status.load(Ordering::Relaxed, guard);
-        let local_flags = StatusFlags::from_bits_truncate(local_status.tag());
+        // let local_flags = StatusFlags::from_bits_truncate(local_status.tag());
 
-        if local_flags.is_pinned() && !local_flags.is_ejecting() {
-            Ok(local_flags.epoch())
+        // if local_flags.is_pinned() && !local_flags.is_ejecting() {
+        //     Ok(local_flags.epoch())
+
+        // HACK(@jeehoonkang): It is inside a very hot loop, but LLVM cannot optimize the above
+        // lines...
+        let tag = local_status.tag();
+        if tag & StatusFlags::PINNED.bits() != 0 &&
+            tag & StatusFlags::EJECTING.bits() == 0
+        {
+            Ok(tag & StatusFlags::EPOCH.bits())
         } else {
             Err(ShieldError::Ejected)
         }

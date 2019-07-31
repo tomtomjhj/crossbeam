@@ -424,6 +424,7 @@ impl<T> Shield<T> {
     ///
     /// assert_eq!(shield.as_raw(), raw);
     /// ```
+    #[inline]
     pub fn as_raw(&self) -> *const T {
         let (raw, _) = decompose_data::<T>(self.data);
         raw
@@ -457,6 +458,7 @@ impl<T> Shield<T> {
     ///     assert_eq!(shield.deref(), &1234);
     /// }
     /// ```
+    #[inline]
     pub unsafe fn deref(&self) -> &T {
         &*self.as_raw()
     }
@@ -550,6 +552,7 @@ impl<T> Shield<T> {
     /// ```
     ///
     /// [`Shared`]: struct.Shared.html
+    #[inline]
     pub fn shared<'s>(&'s self) -> Shared<'s, T> {
         unsafe { Shared::from_usize(self.data) }
     }

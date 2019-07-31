@@ -251,8 +251,8 @@ impl HazardSet {
         let mut visited = false;
         let mut filter = BloomFilter::new();
 
-        let mut pred = Shield::null(guard);
-        let mut curr = Shield::null(guard);
+        let mut pred = Shield::null(if is_curr_thread { unsafe { unprotected() } } else { guard });
+        let mut curr = Shield::null(if is_curr_thread { unsafe { unprotected() } } else { guard });
 
         for hazard in self
             .iter(&mut pred, &mut curr, is_curr_thread, guard)

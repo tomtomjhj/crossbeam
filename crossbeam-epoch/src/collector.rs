@@ -13,7 +13,6 @@
 /// handle.pin().flush();
 /// ```
 use alloc::sync::Arc;
-use core::convert::TryInto;
 use core::fmt;
 
 use guard::Guard;

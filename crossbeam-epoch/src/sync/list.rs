@@ -301,9 +301,30 @@ impl<'g, T: 'g, C: IsElement<T>> Iterator for Iter<'g, T, C> {
             .map(|curr| C::entry_of(curr).next.load(Acquire, self.guard))
         {
             if succ.tag() & 1 != 0 {
-                // This entry was removed. Try unlinking it from the list.
                 let succ = succ.with_tag(0);
 
+                // If this iterator is not detaching marked-as-removed nodes, ignore the `self.curr`
+                // and continue.
+                if !self.is_detaching {
+                    if succ.is_null() {
+                        self.pred.release();
+                        self.curr.release();
+                        return None;
+                    }
+
+                    mem::swap(&mut self.pred, &mut self.curr);
+                    if let Err(e) = self
+                        .curr
+                        .defend(unsafe { element_of_shared::<T, C>(succ) }, self.guard)
+                    {
+                        return Some(Err(IterError::ShieldError(e)));
+                    }
+
+                    continue;
+                }
+
+                // This entry was removed. Try unlinking it from the list.
+                //
                 // The tag should never be zero, because removing a node after a logically deleted
                 // node leaves the list in an invalid state.
                 debug_assert_eq!(self.curr.tag(), 0);

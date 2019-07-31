@@ -47,6 +47,7 @@ optional = true
 [dependencies.crossbeam-epoch]
 version = "0.7.1"
 path = "./crossbeam-epoch"
+package = "crossbeam-pebr-epoch"
 default-features = false
 
 [dependencies.crossbeam-queue]
@@ -57,6 +58,7 @@ optional = true
 [dependencies.crossbeam-utils]
 version = "0.6.5"
 path = "./crossbeam-utils"
+package = "crossbeam-pebr-utils"
 default-features = false
 
 [dev-dependencies]

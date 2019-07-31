@@ -27,11 +27,13 @@ cfg-if = "0.1.2"
 [dependencies.crossbeam-epoch]
 version = "0.7"
 path = "../crossbeam-epoch"
+package = "crossbeam-pebr-epoch"
 default-features = false
 
 [dependencies.crossbeam-utils]
 version = "0.6"
 path = "../crossbeam-utils"
+package = "crossbeam-pebr-utils"
 default-features = false
 
 [dependencies.scopeguard]

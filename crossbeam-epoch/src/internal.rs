@@ -150,6 +150,9 @@ impl Global {
     /// Creates a new global data for garbage collection.
     #[inline]
     pub fn new() -> Self {
+        // TODO(@jeehoonkang): it has a very ugly invariant...
+        membarrier::heavy();
+
         Self {
             locals: List::new(),
             bags: [
@@ -476,7 +479,7 @@ impl Local {
     #[must_use]
     pub fn get_epoch(&self, guard: &Guard) -> Result<usize, ShieldError> {
         // Light fence to synchronize with `Self::eject()`.
-        membarrier::light();
+        unsafe { membarrier::light_membarrier(); }
 
         let local_status = self.status.load(Ordering::Relaxed, guard);
         let local_flags = StatusFlags::from_bits_truncate(local_status.tag());
@@ -730,7 +733,7 @@ impl Local {
         }
 
         // Heavy fence to synchronize with `Self::get_epoch()`.
-        membarrier::heavy();
+        unsafe { membarrier::heavy_membarrier(); }
 
         // Now `self` is pinned at an epoch less than `target_epoch`, and it's marked as being
         // ejected. Finishes ejecting `self`.

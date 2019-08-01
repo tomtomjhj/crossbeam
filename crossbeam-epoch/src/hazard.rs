@@ -81,7 +81,7 @@ impl HazardNode {
 
         self.valid_bits
             .store(valid_bits | (1 << index), Ordering::Relaxed);
-        self.elements[index].store(data, Ordering::Relaxed);
+        self.elements.get_unchecked(index).store(data, Ordering::Relaxed);
         Some(index)
     }
 
@@ -96,7 +96,7 @@ impl HazardNode {
         let valid_bits = valid_bits & !(1 << index);
         fence(Ordering::Release);
         self.valid_bits.store(valid_bits, Ordering::Relaxed);
-        self.elements[index].store(0, Ordering::Relaxed);
+        self.elements.get_unchecked(index).store(0, Ordering::Relaxed);
 
         valid_bits == 0
     }
@@ -104,7 +104,7 @@ impl HazardNode {
     /// Updates a value slot.
     #[inline]
     pub unsafe fn update(&self, index: usize, data: usize, ord: Ordering) {
-        self.elements[index].store(data, ord);
+        self.elements.get_unchecked(index).store(data, ord);
     }
 
     /// Returns an iterator for values.
@@ -146,7 +146,7 @@ impl Iterator for HazardNodeIter {
             }
 
             self.valid_bits &= !(1 << index);
-            let value = unsafe { ((*self.set).elements)[index].load(Ordering::Acquire) };
+            let value = unsafe { (*self.set).elements.get_unchecked(index).load(Ordering::Acquire) };
 
             if value != 0 {
                 return Some(value);
@@ -319,10 +319,8 @@ impl<T> Drop for Shield<T> {
                     // The hazard node becomes empty. Deletes it.
                     // HazardNode::entry_of(node).delete();
                 }
-            }
 
-            if let Some(local) = self.local.as_ref() {
-                local.release_handle();
+                (*self.local).release_handle();
             }
         }
     }
@@ -599,13 +597,11 @@ impl<T> Shield<T> {
             if let Some(node) = self.node.as_ref() {
                 node.update(self.index, data_with_tag::<T>(data, 0), Ordering::Relaxed);
 
-                if let Some(local) = self.local.as_ref() {
-                    // Ensures `local` is not ejected.
-                    if let Err(e) = local.get_epoch(guard) {
-                        self.data = 0;
-                        node.update(self.index, 0, Ordering::Release);
-                        return Err(e);
-                    }
+                // Ensures `local` is not ejected.
+                if let Err(e) = (*self.local).get_epoch(guard) {
+                    self.data = 0;
+                    node.update(self.index, 0, Ordering::Release);
+                    return Err(e);
                 }
             }
         }

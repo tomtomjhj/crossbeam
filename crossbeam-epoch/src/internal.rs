@@ -481,7 +481,7 @@ impl Local {
 
     /// Returns the current epoch if `self` is not ejected yet.
     #[must_use]
-    #[inline(always)]
+    #[inline]
     pub fn get_epoch(&self, guard: &Guard) -> Result<usize, ShieldError> {
         // Light fence to synchronize with `Self::eject()`.
         membarrier::light_membarrier();

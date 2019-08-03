@@ -86,10 +86,6 @@ impl LocalHandle {
     pub fn collector(&self) -> &Collector {
         unsafe { (*self.local).collector() }
     }
-
-    pub fn retired_unreclaimed(&self) -> i64 {
-        unsafe { (*self.local).retired_unreclaimed() }
-    }
 }
 
 impl Drop for LocalHandle {

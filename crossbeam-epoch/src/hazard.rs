@@ -609,6 +609,12 @@ impl<T> Shield<T> {
         Ok(())
     }
 
+    #[inline]
+    /// TODO(@jeehoonkang): documentation...
+    pub unsafe fn defend_fake<'g>(&mut self, ptr: Shared<'g, T>) {
+        self.data = ptr.into_usize();
+    }
+
     /// Releases the inner hazard pointer.
     ///
     /// # Examples

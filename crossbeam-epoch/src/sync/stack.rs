@@ -1,6 +1,6 @@
 use std::mem::ManuallyDrop;
 use std::ptr;
-use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
+use std::sync::atomic::Ordering::{Acquire, Relaxed, AcqRel, Release};
 
 use atomic::{Atomic, Owned};
 use guard::{unprotected, Guard};
@@ -55,28 +55,25 @@ impl<T> Stack<T> {
     #[must_use]
     pub fn try_pop(&self, guard: &Guard) -> Result<Option<T>, ShieldError> {
         let mut head_shield = Shield::null(guard);
-
+        let mut head = self.head.load(Acquire, guard);
         loop {
-            let head = self.head.load(Acquire, guard);
+            if head.is_null() {
+                return Ok(None);
+            }
+
             head_shield.defend(head, guard)?;
-
-            match unsafe { head_shield.as_ref() } {
-                Some(h) => {
-                    let next = h.next.load(Relaxed, guard);
-
-                    if self
-                        .head
-                        .compare_and_set(head, next, Release, guard)
-                        .is_ok()
-                    {
-                        unsafe {
-                            let data = ManuallyDrop::into_inner(ptr::read(&(*h).data));
-                            guard.defer_destroy(head);
-                            return Ok(Some(data));
-                        }
-                    }
+            let head_ref = unsafe { head_shield.deref() };
+            let next = head_ref.next.load(Acquire, guard);
+            match self
+                .head
+                .compare_and_set(head, next, AcqRel, guard)
+            {
+                Ok(_) => unsafe {
+                    let data = ManuallyDrop::into_inner(ptr::read(&(*head_ref).data));
+                    guard.defer_destroy(head);
+                    return Ok(Some(data));
                 }
-                None => return Ok(None),
+                Err(e) => head = e.current,
             }
         }
     }

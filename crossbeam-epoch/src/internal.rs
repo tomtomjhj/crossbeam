@@ -332,7 +332,7 @@ impl Global {
         while !self.collect_inner(global_status, guard)? {}
 
         // Protects the old global summary to prevent the ABA problem.
-        let _shield = Shield::new(global_status, guard)?;
+        let shield = Shield::new(global_status, guard)?;
 
         // All pinned participants were pinned in the current global epoch, and we have removed all
         // the old garbages. Now let's advance the global epoch. First, calculates the new global
@@ -354,6 +354,7 @@ impl Global {
             }
         }
 
+        drop(shield);
         Ok(())
     }
 }
@@ -523,6 +524,10 @@ impl Local {
                 !local_flags.is_pinned(),
                 "[Local::pin()] `self` should be unpinned"
             );
+            debug_assert!(
+                !local_flags.is_ejecting(),
+                "[Local::pin()] `self` should be unejecting"
+            );
 
             // Loads the current global status. It's safe not to protect the load because we're not
             // accessing its contents.
@@ -611,8 +616,13 @@ impl Local {
                 let status = self.status.load(Ordering::Acquire, guard);
                 let flags = StatusFlags::from_bits_truncate(status.tag());
 
-                // Unpins `self` if it's not already unpinned.
-                if flags.is_pinned() {
+                // If `self` is already unpinned, reuse the bloom filter.
+                if !flags.is_pinned() {
+                    debug_assert!(flags.is_ejecting());
+                    let flags = flags & !StatusFlags::EJECTING;
+                    self.status.store(status.with_tag(flags.bits()), Ordering::Release);
+                }
+                else {
                     // Creates a summary of the set of hazard pointers.
                     let new_status = repeat_iter(|| self.hazards.make_summary(true, guard))
                         // `ShieldError` is impossible with the `unprotected()` guard.
@@ -724,8 +734,8 @@ impl Local {
             "[Local::help_eject()] `self` should be ejecting"
         );
 
-        // Shields the current status to prevent the ABA problem.
-        let _shield = Shield::new(status, guard)?;
+        // Protects the current status to prevent the ABA problem.
+        let shield = Shield::new(status, guard)?;
 
         // Creates a summary of the set of hazard pointers.
         let new_status = repeat_iter(|| self.hazards.make_summary(false, &guard))?
@@ -734,7 +744,7 @@ impl Local {
             .with_tag(StatusFlags::new(true, false, flags.epoch()).bits());
 
         // Replaces the old status with the new one.
-        let status = match self
+        let return_status = match self
             .status
             .compare_and_set(status, new_status, Ordering::AcqRel, guard)
         {
@@ -751,7 +761,9 @@ impl Local {
                 e.current
             },
         };
-        Ok(status)
+
+        drop(shield);
+        Ok(return_status)
     }
 
     /// Removes the `Local` from the global linked list.
@@ -770,6 +782,15 @@ impl Local {
 
             // Defers to destroy the local summary.
             let local_status = self.status.load(Ordering::Relaxed, &guard);
+            let local_flags = StatusFlags::from_bits_truncate(local_status.tag());
+            debug_assert!(
+                !local_flags.is_pinned(),
+                "[Local::finalize()] `self` should be unpinned"
+            );
+            debug_assert!(
+                !local_flags.is_ejecting(),
+                "[Local::finalize()] `self` should be unejecting"
+            );
             if !local_status.is_null() {
                 unsafe {
                     guard.defer_destroy(local_status);

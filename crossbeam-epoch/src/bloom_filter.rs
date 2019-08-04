@@ -3,7 +3,7 @@ use murmur3::murmur3_x64_128;
 
 /// Size of a bloom filter in bytes.  128 bytes = 2 cachelines.
 const BLOOM_FILTER_SIZE: usize = 128;
-const_assert!(bloom_fiter_size; BLOOM_FILTER_SIZE % mem::size_of::<usize>() == 0);
+const_assert!(bloom_filter_size; BLOOM_FILTER_SIZE % mem::size_of::<usize>() == 0);
 
 /// Bloom filter for `usize`.
 #[derive(Default, Debug)]

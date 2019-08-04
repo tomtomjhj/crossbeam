@@ -64,6 +64,7 @@ const EPOCH_WIDTH: u32 = 5;
 const BAGS_WIDTH: u32 = 3;
 
 const_assert!(bags_epoch_width; BAGS_WIDTH <= EPOCH_WIDTH);
+const_assert!(bloom_filter_align; mem::align_of::<CachePadded<BloomFilter>>() % (1 << (EPOCH_WIDTH + 2)) == 0);
 
 /// Compares two epochs.
 fn epoch_cmp(a: usize, b: usize) -> cmp::Ordering {

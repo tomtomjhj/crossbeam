@@ -1,11 +1,11 @@
-extern crate crossbeam_utils;
+extern crate crossbeam_pebr_utils;
 
 use std::thread::sleep;
 use std::time::Duration;
 use std::u32;
 
-use crossbeam_utils::sync::Parker;
-use crossbeam_utils::thread;
+use crossbeam_pebr_utils::sync::Parker;
+use crossbeam_pebr_utils::thread;
 
 #[test]
 fn park_timeout_unpark_before() {

@@ -1,11 +1,11 @@
-extern crate crossbeam_utils;
+extern crate crossbeam_pebr_utils;
 
 use std::any::Any;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread::sleep;
 use std::time::Duration;
 
-use crossbeam_utils::thread;
+use crossbeam_pebr_utils::thread;
 
 const THREADS: usize = 10;
 const SMALL_STACK_SIZE: usize = 20;

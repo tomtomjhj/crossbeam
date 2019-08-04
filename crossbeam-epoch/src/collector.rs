@@ -3,7 +3,7 @@
 /// # Examples
 ///
 /// ```
-/// use crossbeam_epoch::Collector;
+/// use crossbeam_pebr_epoch::Collector;
 ///
 /// let collector = Collector::new();
 ///

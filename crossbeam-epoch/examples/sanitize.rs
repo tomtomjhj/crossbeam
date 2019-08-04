@@ -1,4 +1,4 @@
-extern crate crossbeam_epoch as epoch;
+extern crate crossbeam_pebr_epoch as epoch;
 extern crate rand;
 
 use std::sync::atomic::AtomicUsize;

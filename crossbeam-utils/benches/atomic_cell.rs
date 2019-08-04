@@ -1,12 +1,12 @@
 #![feature(test)]
 
-extern crate crossbeam_utils;
+extern crate crossbeam_pebr_utils;
 extern crate test;
 
 use std::sync::Barrier;
 
-use crossbeam_utils::atomic::AtomicCell;
-use crossbeam_utils::thread;
+use crossbeam_pebr_utils::atomic::AtomicCell;
+use crossbeam_pebr_utils::thread;
 
 #[bench]
 fn load_u8(b: &mut test::Bencher) {

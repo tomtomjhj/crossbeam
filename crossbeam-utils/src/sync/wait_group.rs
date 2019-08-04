@@ -19,7 +19,7 @@ use std::sync::{Arc, Condvar, Mutex};
 /// # Examples
 ///
 /// ```
-/// use crossbeam_utils::sync::WaitGroup;
+/// use crossbeam_pebr_utils::sync::WaitGroup;
 /// use std::thread;
 ///
 /// // Create a new wait group.
@@ -58,7 +58,7 @@ impl WaitGroup {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::sync::WaitGroup;
+    /// use crossbeam_pebr_utils::sync::WaitGroup;
     ///
     /// let wg = WaitGroup::new();
     /// ```
@@ -76,7 +76,7 @@ impl WaitGroup {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::sync::WaitGroup;
+    /// use crossbeam_pebr_utils::sync::WaitGroup;
     /// use std::thread;
     ///
     /// let wg = WaitGroup::new();

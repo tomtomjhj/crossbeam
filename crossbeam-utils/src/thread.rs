@@ -3,7 +3,7 @@
 //! Create a scope when spawned threads need to access variables on the stack:
 //!
 //! ```
-//! use crossbeam_utils::thread;
+//! use crossbeam_pebr_utils::thread;
 //!
 //! let people = vec![
 //!     "Alice".to_string(),
@@ -85,7 +85,7 @@
 //! cannot be borrowed by scoped threads:
 //!
 //! ```ignore
-//! use crossbeam_utils::thread;
+//! use crossbeam_pebr_utils::thread;
 //!
 //! thread::scope(|s| {
 //!     s.spawn(|_| {
@@ -100,7 +100,7 @@
 //! argument, which can be used for spawning nested threads:
 //!
 //! ```
-//! use crossbeam_utils::thread;
+//! use crossbeam_pebr_utils::thread;
 //!
 //! thread::scope(|s| {
 //!     // Note the `|s|` here.
@@ -136,7 +136,7 @@ type SharedOption<T> = Arc<Mutex<Option<T>>>;
 /// # Examples
 ///
 /// ```
-/// use crossbeam_utils::thread;
+/// use crossbeam_pebr_utils::thread;
 ///
 /// let var = vec![1, 2, 3];
 ///
@@ -224,7 +224,7 @@ impl<'env> Scope<'env> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::thread;
+    /// use crossbeam_pebr_utils::thread;
     ///
     /// thread::scope(|s| {
     ///     let handle = s.spawn(|_| {
@@ -251,7 +251,7 @@ impl<'env> Scope<'env> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::thread;
+    /// use crossbeam_pebr_utils::thread;
     /// use std::thread::current;
     ///
     /// thread::scope(|s| {
@@ -291,7 +291,7 @@ impl<'env> fmt::Debug for Scope<'env> {
 /// # Examples
 ///
 /// ```
-/// use crossbeam_utils::thread;
+/// use crossbeam_pebr_utils::thread;
 ///
 /// thread::scope(|s| {
 ///     s.builder()
@@ -322,7 +322,7 @@ impl<'scope, 'env> ScopedThreadBuilder<'scope, 'env> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::thread;
+    /// use crossbeam_pebr_utils::thread;
     /// use std::thread::current;
     ///
     /// thread::scope(|s| {
@@ -346,7 +346,7 @@ impl<'scope, 'env> ScopedThreadBuilder<'scope, 'env> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::thread;
+    /// use crossbeam_pebr_utils::thread;
     ///
     /// thread::scope(|s| {
     ///     s.builder()
@@ -370,7 +370,7 @@ impl<'scope, 'env> ScopedThreadBuilder<'scope, 'env> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::thread;
+    /// use crossbeam_pebr_utils::thread;
     ///
     /// thread::scope(|s| {
     ///     let handle = s.builder()
@@ -479,7 +479,7 @@ impl<'scope, T> ScopedJoinHandle<'scope, T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::thread;
+    /// use crossbeam_pebr_utils::thread;
     ///
     /// thread::scope(|s| {
     ///     let handle1 = s.spawn(|_| println!("I'm a happy thread :)"));
@@ -510,7 +510,7 @@ impl<'scope, T> ScopedJoinHandle<'scope, T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::thread;
+    /// use crossbeam_pebr_utils::thread;
     ///
     /// thread::scope(|s| {
     ///     let handle = s.spawn(|_| println!("A child thread is running"));

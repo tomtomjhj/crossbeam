@@ -1,6 +1,6 @@
 #![feature(test)]
 
-extern crate crossbeam_epoch as epoch;
+extern crate crossbeam_pebr_epoch as epoch;
 extern crate crossbeam_utils as utils;
 extern crate test;
 

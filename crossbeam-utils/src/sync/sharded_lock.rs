@@ -51,7 +51,7 @@ struct Shard {
 /// # Examples
 ///
 /// ```
-/// use crossbeam_utils::sync::ShardedLock;
+/// use crossbeam_pebr_utils::sync::ShardedLock;
 ///
 /// let lock = ShardedLock::new(5);
 ///
@@ -92,7 +92,7 @@ impl<T> ShardedLock<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::sync::ShardedLock;
+    /// use crossbeam_pebr_utils::sync::ShardedLock;
     ///
     /// let lock = ShardedLock::new(5);
     /// ```
@@ -117,7 +117,7 @@ impl<T> ShardedLock<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::sync::ShardedLock;
+    /// use crossbeam_pebr_utils::sync::ShardedLock;
     ///
     /// let lock = ShardedLock::new(String::new());
     /// {
@@ -147,7 +147,7 @@ impl<T: ?Sized> ShardedLock<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::sync::ShardedLock;
+    /// use crossbeam_pebr_utils::sync::ShardedLock;
     /// use std::sync::Arc;
     /// use std::thread;
     ///
@@ -174,7 +174,7 @@ impl<T: ?Sized> ShardedLock<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::sync::ShardedLock;
+    /// use crossbeam_pebr_utils::sync::ShardedLock;
     ///
     /// let mut lock = ShardedLock::new(0);
     /// *lock.get_mut().unwrap() = 10;
@@ -204,7 +204,7 @@ impl<T: ?Sized> ShardedLock<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::sync::ShardedLock;
+    /// use crossbeam_pebr_utils::sync::ShardedLock;
     ///
     /// let lock = ShardedLock::new(1);
     ///
@@ -249,7 +249,7 @@ impl<T: ?Sized> ShardedLock<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::sync::ShardedLock;
+    /// use crossbeam_pebr_utils::sync::ShardedLock;
     /// use std::sync::Arc;
     /// use std::thread;
     ///
@@ -297,7 +297,7 @@ impl<T: ?Sized> ShardedLock<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::sync::ShardedLock;
+    /// use crossbeam_pebr_utils::sync::ShardedLock;
     ///
     /// let lock = ShardedLock::new(1);
     ///
@@ -368,7 +368,7 @@ impl<T: ?Sized> ShardedLock<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::sync::ShardedLock;
+    /// use crossbeam_pebr_utils::sync::ShardedLock;
     ///
     /// let lock = ShardedLock::new(1);
     ///

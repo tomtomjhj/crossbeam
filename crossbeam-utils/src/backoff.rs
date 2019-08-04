@@ -19,7 +19,7 @@ const YIELD_LIMIT: u32 = 10;
 /// Backing off in a lock-free loop:
 ///
 /// ```
-/// use crossbeam_utils::Backoff;
+/// use crossbeam_pebr_utils::Backoff;
 /// use std::sync::atomic::AtomicUsize;
 /// use std::sync::atomic::Ordering::SeqCst;
 ///
@@ -38,7 +38,7 @@ const YIELD_LIMIT: u32 = 10;
 /// Waiting for an [`AtomicBool`] to become `true`:
 ///
 /// ```
-/// use crossbeam_utils::Backoff;
+/// use crossbeam_pebr_utils::Backoff;
 /// use std::sync::atomic::AtomicBool;
 /// use std::sync::atomic::Ordering::SeqCst;
 ///
@@ -55,7 +55,7 @@ const YIELD_LIMIT: u32 = 10;
 /// [`unpark()`]:
 ///
 /// ```
-/// use crossbeam_utils::Backoff;
+/// use crossbeam_pebr_utils::Backoff;
 /// use std::sync::atomic::AtomicBool;
 /// use std::sync::atomic::Ordering::SeqCst;
 /// use std::thread;
@@ -87,7 +87,7 @@ impl Backoff {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::Backoff;
+    /// use crossbeam_pebr_utils::Backoff;
     ///
     /// let backoff = Backoff::new();
     /// ```
@@ -101,7 +101,7 @@ impl Backoff {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::Backoff;
+    /// use crossbeam_pebr_utils::Backoff;
     ///
     /// let backoff = Backoff::new();
     /// backoff.reset();
@@ -123,7 +123,7 @@ impl Backoff {
     /// Backing off in a lock-free loop:
     ///
     /// ```
-    /// use crossbeam_utils::Backoff;
+    /// use crossbeam_pebr_utils::Backoff;
     /// use std::sync::atomic::AtomicUsize;
     /// use std::sync::atomic::Ordering::SeqCst;
     ///
@@ -173,7 +173,7 @@ impl Backoff {
     /// Waiting for an [`AtomicBool`] to become `true`:
     ///
     /// ```
-    /// use crossbeam_utils::Backoff;
+    /// use crossbeam_pebr_utils::Backoff;
     /// use std::sync::Arc;
     /// use std::sync::atomic::AtomicBool;
     /// use std::sync::atomic::Ordering::SeqCst;
@@ -229,7 +229,7 @@ impl Backoff {
     /// Waiting for an [`AtomicBool`] to become `true` and parking the thread after a long wait:
     ///
     /// ```
-    /// use crossbeam_utils::Backoff;
+    /// use crossbeam_pebr_utils::Backoff;
     /// use std::sync::Arc;
     /// use std::sync::atomic::AtomicBool;
     /// use std::sync::atomic::Ordering::SeqCst;

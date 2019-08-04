@@ -40,7 +40,7 @@ impl<T> AtomicCell<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::atomic::AtomicCell;
+    /// use crossbeam_pebr_utils::atomic::AtomicCell;
     ///
     /// let a = AtomicCell::new(7);
     /// ```
@@ -55,7 +55,7 @@ impl<T> AtomicCell<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::atomic::AtomicCell;
+    /// use crossbeam_pebr_utils::atomic::AtomicCell;
     ///
     /// let mut a = AtomicCell::new(7);
     /// let v = a.into_inner();
@@ -74,7 +74,7 @@ impl<T> AtomicCell<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::atomic::AtomicCell;
+    /// use crossbeam_pebr_utils::atomic::AtomicCell;
     ///
     /// // This type is internally represented as `AtomicUsize` so we can just use atomic
     /// // operations provided by it.
@@ -103,7 +103,7 @@ impl<T> AtomicCell<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::atomic::AtomicCell;
+    /// use crossbeam_pebr_utils::atomic::AtomicCell;
     ///
     /// let a = AtomicCell::new(7);
     ///
@@ -126,7 +126,7 @@ impl<T> AtomicCell<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::atomic::AtomicCell;
+    /// use crossbeam_pebr_utils::atomic::AtomicCell;
     ///
     /// let a = AtomicCell::new(7);
     ///
@@ -145,7 +145,7 @@ impl<T: ?Sized> AtomicCell<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::atomic::AtomicCell;
+    /// use crossbeam_pebr_utils::atomic::AtomicCell;
     ///
     /// let mut a = AtomicCell::new(5);
     ///
@@ -161,7 +161,7 @@ impl<T: ?Sized> AtomicCell<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::atomic::AtomicCell;
+    /// use crossbeam_pebr_utils::atomic::AtomicCell;
     ///
     /// let mut a = AtomicCell::new(7);
     /// *a.get_mut() += 1;
@@ -184,7 +184,7 @@ impl<T: Default> AtomicCell<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::atomic::AtomicCell;
+    /// use crossbeam_pebr_utils::atomic::AtomicCell;
     ///
     /// let a = AtomicCell::new(5);
     /// let five = a.take();
@@ -203,7 +203,7 @@ impl<T: Copy> AtomicCell<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::atomic::AtomicCell;
+    /// use crossbeam_pebr_utils::atomic::AtomicCell;
     ///
     /// let a = AtomicCell::new(7);
     ///
@@ -223,7 +223,7 @@ impl<T: Copy + Eq> AtomicCell<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::atomic::AtomicCell;
+    /// use crossbeam_pebr_utils::atomic::AtomicCell;
     ///
     /// let a = AtomicCell::new(1);
     ///
@@ -248,7 +248,7 @@ impl<T: Copy + Eq> AtomicCell<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::atomic::AtomicCell;
+    /// use crossbeam_pebr_utils::atomic::AtomicCell;
     ///
     /// let a = AtomicCell::new(1);
     ///
@@ -273,7 +273,7 @@ macro_rules! impl_arithmetic {
             /// # Examples
             ///
             /// ```
-            /// use crossbeam_utils::atomic::AtomicCell;
+            /// use crossbeam_pebr_utils::atomic::AtomicCell;
             ///
             #[doc = $example]
             ///
@@ -301,7 +301,7 @@ macro_rules! impl_arithmetic {
             /// # Examples
             ///
             /// ```
-            /// use crossbeam_utils::atomic::AtomicCell;
+            /// use crossbeam_pebr_utils::atomic::AtomicCell;
             ///
             #[doc = $example]
             ///
@@ -327,7 +327,7 @@ macro_rules! impl_arithmetic {
             /// # Examples
             ///
             /// ```
-            /// use crossbeam_utils::atomic::AtomicCell;
+            /// use crossbeam_pebr_utils::atomic::AtomicCell;
             ///
             #[doc = $example]
             ///
@@ -353,7 +353,7 @@ macro_rules! impl_arithmetic {
             /// # Examples
             ///
             /// ```
-            /// use crossbeam_utils::atomic::AtomicCell;
+            /// use crossbeam_pebr_utils::atomic::AtomicCell;
             ///
             #[doc = $example]
             ///
@@ -379,7 +379,7 @@ macro_rules! impl_arithmetic {
             /// # Examples
             ///
             /// ```
-            /// use crossbeam_utils::atomic::AtomicCell;
+            /// use crossbeam_pebr_utils::atomic::AtomicCell;
             ///
             #[doc = $example]
             ///
@@ -410,7 +410,7 @@ macro_rules! impl_arithmetic {
             /// # Examples
             ///
             /// ```
-            /// use crossbeam_utils::atomic::AtomicCell;
+            /// use crossbeam_pebr_utils::atomic::AtomicCell;
             ///
             #[doc = $example]
             ///
@@ -430,7 +430,7 @@ macro_rules! impl_arithmetic {
             /// # Examples
             ///
             /// ```
-            /// use crossbeam_utils::atomic::AtomicCell;
+            /// use crossbeam_pebr_utils::atomic::AtomicCell;
             ///
             #[doc = $example]
             ///
@@ -448,7 +448,7 @@ macro_rules! impl_arithmetic {
             /// # Examples
             ///
             /// ```
-            /// use crossbeam_utils::atomic::AtomicCell;
+            /// use crossbeam_pebr_utils::atomic::AtomicCell;
             ///
             #[doc = $example]
             ///
@@ -466,7 +466,7 @@ macro_rules! impl_arithmetic {
             /// # Examples
             ///
             /// ```
-            /// use crossbeam_utils::atomic::AtomicCell;
+            /// use crossbeam_pebr_utils::atomic::AtomicCell;
             ///
             #[doc = $example]
             ///
@@ -484,7 +484,7 @@ macro_rules! impl_arithmetic {
             /// # Examples
             ///
             /// ```
-            /// use crossbeam_utils::atomic::AtomicCell;
+            /// use crossbeam_pebr_utils::atomic::AtomicCell;
             ///
             #[doc = $example]
             ///
@@ -547,7 +547,7 @@ impl AtomicCell<bool> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::atomic::AtomicCell;
+    /// use crossbeam_pebr_utils::atomic::AtomicCell;
     ///
     /// let a = AtomicCell::new(true);
     ///
@@ -568,7 +568,7 @@ impl AtomicCell<bool> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::atomic::AtomicCell;
+    /// use crossbeam_pebr_utils::atomic::AtomicCell;
     ///
     /// let a = AtomicCell::new(false);
     ///
@@ -589,7 +589,7 @@ impl AtomicCell<bool> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::atomic::AtomicCell;
+    /// use crossbeam_pebr_utils::atomic::AtomicCell;
     ///
     /// let a = AtomicCell::new(true);
     ///

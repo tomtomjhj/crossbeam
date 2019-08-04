@@ -28,7 +28,7 @@ use std::time::Duration;
 /// ```
 /// use std::thread;
 /// use std::time::Duration;
-/// use crossbeam_utils::sync::Parker;
+/// use crossbeam_pebr_utils::sync::Parker;
 ///
 /// let mut p = Parker::new();
 /// let u = p.unparker().clone();
@@ -64,7 +64,7 @@ impl Parker {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::sync::Parker;
+    /// use crossbeam_pebr_utils::sync::Parker;
     ///
     /// let p = Parker::new();
     /// ```
@@ -90,7 +90,7 @@ impl Parker {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::sync::Parker;
+    /// use crossbeam_pebr_utils::sync::Parker;
     ///
     /// let mut p = Parker::new();
     /// let u = p.unparker().clone();
@@ -114,7 +114,7 @@ impl Parker {
     ///
     /// ```
     /// use std::time::Duration;
-    /// use crossbeam_utils::sync::Parker;
+    /// use crossbeam_pebr_utils::sync::Parker;
     ///
     /// let mut p = Parker::new();
     ///
@@ -132,7 +132,7 @@ impl Parker {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_utils::sync::Parker;
+    /// use crossbeam_pebr_utils::sync::Parker;
     ///
     /// let mut p = Parker::new();
     /// let u = p.unparker().clone();
@@ -179,7 +179,7 @@ impl Unparker {
     /// ```
     /// use std::thread;
     /// use std::time::Duration;
-    /// use crossbeam_utils::sync::Parker;
+    /// use crossbeam_pebr_utils::sync::Parker;
     ///
     /// let mut p = Parker::new();
     /// let u = p.unparker().clone();

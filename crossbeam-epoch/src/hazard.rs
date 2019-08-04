@@ -335,7 +335,7 @@ impl<T> Shield<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_epoch::{self as epoch, Atomic, Shield};
+    /// use crossbeam_pebr_epoch::{self as epoch, Atomic, Shield};
     /// use std::sync::atomic::Ordering::SeqCst;
     ///
     /// // Create a heap-allocated number.
@@ -403,7 +403,7 @@ impl<T> Shield<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_epoch::{self as epoch, Atomic, Owned, Shield};
+    /// use crossbeam_pebr_epoch::{self as epoch, Atomic, Owned, Shield};
     /// use std::sync::atomic::Ordering::SeqCst;
     ///
     /// // Create a heap-allocated number.
@@ -437,7 +437,7 @@ impl<T> Shield<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_epoch::{self as epoch, Atomic, Shared, Shield};
+    /// use crossbeam_pebr_epoch::{self as epoch, Atomic, Shared, Shield};
     /// use std::sync::atomic::Ordering::SeqCst;
     ///
     /// // Create a heap-allocated number.
@@ -472,7 +472,7 @@ impl<T> Shield<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_epoch::{self as epoch, Atomic, Shared, Shield};
+    /// use crossbeam_pebr_epoch::{self as epoch, Atomic, Shared, Shield};
     /// use std::sync::atomic::Ordering::SeqCst;
     ///
     /// // Create a heap-allocated number.
@@ -500,7 +500,7 @@ impl<T> Shield<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_epoch::{self as epoch, Atomic, Shared, Shield};
+    /// use crossbeam_pebr_epoch::{self as epoch, Atomic, Shared, Shield};
     /// use std::sync::atomic::Ordering::SeqCst;
     ///
     /// // Create a heap-allocated number.
@@ -529,7 +529,7 @@ impl<T> Shield<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_epoch::{self as epoch, Atomic, Shared, Shield};
+    /// use crossbeam_pebr_epoch::{self as epoch, Atomic, Shared, Shield};
     /// use std::sync::atomic::Ordering::SeqCst;
     ///
     /// // Create a heap-allocated number.
@@ -563,7 +563,7 @@ impl<T> Shield<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_epoch::{self as epoch, Atomic, Shared, Shield};
+    /// use crossbeam_pebr_epoch::{self as epoch, Atomic, Shared, Shield};
     /// use std::sync::atomic::Ordering::SeqCst;
     ///
     /// // Create a heap-allocated number.
@@ -620,7 +620,7 @@ impl<T> Shield<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_epoch::{self as epoch, Atomic, Shared, Shield};
+    /// use crossbeam_pebr_epoch::{self as epoch, Atomic, Shared, Shield};
     /// use std::sync::atomic::Ordering::SeqCst;
     ///
     /// // Create a heap-allocated number.

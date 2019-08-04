@@ -1,9 +1,9 @@
-extern crate crossbeam_utils;
+extern crate crossbeam_pebr_utils;
 
 use std::cell::Cell;
 use std::mem;
 
-use crossbeam_utils::CachePadded;
+use crossbeam_pebr_utils::CachePadded;
 
 #[test]
 fn default() {

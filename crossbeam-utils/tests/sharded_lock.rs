@@ -1,4 +1,4 @@
-extern crate crossbeam_utils;
+extern crate crossbeam_pebr_utils;
 extern crate rand;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -6,7 +6,7 @@ use std::sync::mpsc::channel;
 use std::sync::{Arc, TryLockError};
 use std::thread;
 
-use crossbeam_utils::sync::ShardedLock;
+use crossbeam_pebr_utils::sync::ShardedLock;
 use rand::Rng;
 
 #[derive(Eq, PartialEq, Debug)]

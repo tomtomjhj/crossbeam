@@ -187,7 +187,7 @@ impl Global {
         status: Shared<'g, CachePadded<BloomFilter>>,
         guard: &'g Guard,
     ) -> Result<bool, ShieldError> {
-        let shield = Shield::new(status, guard);
+        let shield = Shield::new(status, guard)?;
         let summary = unsafe { shield.as_ref() }.map(Deref::deref);
 
         let flags = StatusFlags::from_bits_truncate(status.tag());
@@ -339,8 +339,8 @@ impl Global {
             .into_shared(guard)
             .with_tag(new_flags.bits());
 
-        // Protects the old global summary so that it cannot be reused.
-        let _shield = Shield::new(global_status, guard);
+        // Protects the old global summary to prevent the ABA problem.
+        let _shield = Shield::new(global_status, guard)?;
 
         // Tries to replace the global status.
         match self
@@ -719,24 +719,18 @@ impl Local {
 
         // Now `self` is pinned at an epoch less than `target_epoch`, and it's marked as being
         // ejected. Finishes ejecting `self`.
-        self.help_eject(status, guard)
-    }
-
-    /// Helps finishing the ejection of `self`, and returns its new status.
-    #[must_use]
-    fn help_eject<'g>(
-        &self,
-        status: Shared<'g, CachePadded<BloomFilter>>,
-        guard: &'g Guard,
-    ) -> Result<Shared<'g, CachePadded<BloomFilter>>, ShieldError> {
         let flags = StatusFlags::from_bits_truncate(status.tag());
         debug_assert!(
             flags.is_pinned(),
             "[Local::help_eject()] `self` should be pinned"
         );
+        debug_assert!(
+            flags.is_ejecting(),
+            "[Local::help_eject()] `self` should be ejecting"
+        );
 
         // Shields the current status to prevent the ABA problem.
-        let _shield = Shield::new(status, guard);
+        let _shield = Shield::new(status, guard)?;
 
         // Creates a summary of the set of hazard pointers.
         let new_status = repeat_iter(|| self.hazards.make_summary(false, &guard))?

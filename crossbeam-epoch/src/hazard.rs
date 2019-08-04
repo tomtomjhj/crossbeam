@@ -345,7 +345,7 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Creates a shield to the heap-allocated object.
-    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard);
+    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard).unwrap();
     ///
     /// // Drop the guard.
     /// drop(guard);
@@ -359,33 +359,12 @@ impl<T> Shield<T> {
     ///
     /// [`unprotected`]: fn.unprotected.html
     /// [`Shield`]: struct.Shield.html
+    #[inline]
     #[must_use]
-    pub fn new<'g>(ptr: Shared<'g, T>, guard: &Guard) -> Self {
-        let data = ptr.into_usize();
-
-        if let Some(local) = unsafe { guard.local.as_ref() } {
-            // Acquire a handle so that the underlying thread-local storage is not deallocated.
-            local.acquire_handle();
-
-            let (node, index) =
-                unsafe { local.hazards.acquire(data_with_tag::<T>(data, 0), guard) };
-
-            Self {
-                data,
-                local,
-                node,
-                index,
-                _marker: PhantomData,
-            }
-        } else {
-            Self {
-                data,
-                local: ptr::null(),
-                node: ptr::null(),
-                index: 0,
-                _marker: PhantomData,
-            }
-        }
+    pub fn new<'g>(ptr: Shared<'g, T>, guard: &Guard) -> Result<Self, ShieldError> {
+        let mut shield = Self::null(guard);
+        shield.defend(ptr, guard)?;
+        Ok(shield)
     }
 
     /// Creates a new null shield.
@@ -393,9 +372,30 @@ impl<T> Shield<T> {
     /// See [`Shield::new`] for more details.
     ///
     /// [`Shield::new`]: struct.Shield.html#method.new
-    #[must_use]
     pub fn null<'g>(guard: &Guard) -> Self {
-        Self::new(Shared::null(), guard)
+        if let Some(local) = unsafe { guard.local.as_ref() } {
+            // Acquire a handle so that the underlying thread-local storage is not deallocated.
+            local.acquire_handle();
+
+            let (node, index) =
+                unsafe { local.hazards.acquire(0, guard) };
+
+            Self {
+                data: 0,
+                local,
+                node,
+                index,
+                _marker: PhantomData,
+            }
+        } else {
+            Self {
+                data: 0,
+                local: ptr::null(),
+                node: ptr::null(),
+                index: 0,
+                _marker: PhantomData,
+            }
+        }
     }
 
     /// Converts the pointer to a raw pointer (without the tag).
@@ -415,7 +415,7 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Create a new shield.
-    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard);
+    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard).unwrap();
     ///
     /// // Drop the guard.
     /// drop(guard);
@@ -447,7 +447,7 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Create a new shield.
-    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard);
+    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard).unwrap();
     ///
     /// // Drop the guard.
     /// drop(guard);
@@ -482,7 +482,7 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Create a new shield.
-    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard);
+    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard).unwrap();
     ///
     /// // Drop the guard.
     /// drop(guard);
@@ -510,7 +510,7 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Create a new shield.
-    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard);
+    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard).unwrap();
     ///
     /// // Drop the guard.
     /// drop(guard);
@@ -539,7 +539,7 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Create a new shield.
-    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard);
+    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard).unwrap();
     ///
     /// // Drop the guard.
     /// drop(guard);
@@ -630,7 +630,7 @@ impl<T> Shield<T> {
     /// let guard = epoch::pin();
     ///
     /// // Create a shield to the heap-allocated object.
-    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard);
+    /// let mut shield = Shield::new(a.load(SeqCst, &guard), &guard).unwrap();
     ///
     /// // Releases the shield.
     /// shield.release();

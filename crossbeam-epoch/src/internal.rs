@@ -331,33 +331,28 @@ impl Global {
         // Collects all the old garbage bags.
         while !self.collect_inner(global_status, guard)? {}
 
+        // Protects the old global summary to prevent the ABA problem.
+        let _shield = Shield::new(global_status, guard)?;
+
         // All pinned participants were pinned in the current global epoch, and we have removed all
         // the old garbages. Now let's advance the global epoch. First, calculates the new global
         // status.
         let new_flags = StatusFlags::new(false, false, global_flags.epoch().wrapping_add(1));
-        let new_status = Owned::new(CachePadded::new(new_summary))
-            .into_shared(guard)
-            .with_tag(new_flags.bits());
-
-        // Protects the old global summary to prevent the ABA problem.
-        let _shield = Shield::new(global_status, guard)?;
+        let new_status = Owned::new(CachePadded::new(new_summary)).with_tag(new_flags.bits());
 
         // Tries to replace the global status.
-        match self
+        if self
             .status
             .compare_and_set(global_status, new_status, Ordering::Release, guard)
+            .is_ok()
         {
             // If successful, destroys the old summary.
-            Ok(_) => unsafe {
-                if !global_status.is_null() {
+            if !global_status.is_null() {
+                unsafe {
                     guard.defer_destroy(global_status);
                 }
-            },
-            // If unsuccessful, destroys the new summary.
-            Err(_) => unsafe {
-                drop(new_status.into_owned());
-            },
-        };
+            }
+        }
 
         Ok(())
     }

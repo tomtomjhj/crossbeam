@@ -518,7 +518,13 @@ impl Local {
         if guard_count == 0 {
             // Loads the current local status. It's safe not to protect the access because no other
             // threads are modifying it.
-            let local_status = unsafe { self.status.load(Ordering::Relaxed, unprotected()) };
+            let mut local_status = unsafe { self.status.load(Ordering::Relaxed, unprotected()) };
+
+            // Loads the current global status. It's safe not to protect the load because we're not
+            // accessing its contents.
+            let mut global_status =
+                unsafe { self.global().status.load(Ordering::Relaxed, unprotected()) };
+
             let local_flags = StatusFlags::from_bits_truncate(local_status.tag());
             debug_assert!(
                 !local_flags.is_pinned(),
@@ -529,11 +535,9 @@ impl Local {
                 "[Local::pin()] `self` should be unejecting"
             );
 
-            // Loads the current global status. It's safe not to protect the load because we're not
-            // accessing its contents.
-            let mut global_status =
-                unsafe { self.global().status.load(Ordering::Relaxed, unprotected()) };
-
+            // Now we must store the new status into `self.status` and execute a `SeqCst` fence.
+            // The fence makes sure that any future loads from `Atomic`s will not happen before this
+            // store.
             loop {
                 let global_flags = StatusFlags::from_bits_truncate(global_status.tag());
 
@@ -541,9 +545,6 @@ impl Local {
                 let new_status = local_status
                     .with_tag(StatusFlags::new(false, true, global_flags.epoch()).bits());
 
-                // Now we must store the new status into `self.status` and execute a `SeqCst` fence.
-                // The fence makes sure that any future loads from `Atomic`s will not happen before
-                // this store.
                 if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
                     // HACK(stjepang): On x86 architectures there are two different ways of
                     // executing a `SeqCst` fence.
@@ -558,14 +559,27 @@ impl Local {
                     // very differently from SC accesses), but experimental evidence suggests that
                     // this works fine.  Using inline assembly would be a viable (and correct)
                     // alternative, but alas, that is not possible on stable Rust.
-                    self.status.swap(new_status, Ordering::SeqCst, &guard);
+                    if let Err(e) = self
+                        .status
+                        .compare_and_set(local_status, new_status, Ordering::SeqCst, &guard)
+                    {
+                        local_status = e.current;
+                        continue;
+                    }
 
                     // We add a compiler fence to make it less likely for LLVM to do something wrong
                     // here.  Formally, this is not enough to get rid of data races; practically, it
                     // should go a long way.
                     atomic::compiler_fence(Ordering::SeqCst);
                 } else {
-                    self.status.store(new_status, Ordering::Relaxed);
+                    if let Err(e) = self
+                        .status
+                        .compare_and_set(local_status, new_status, Ordering::AcqRel, &guard)
+                    {
+                        local_status = e.current;
+                        continue;
+                    }
+
                     atomic::fence(Ordering::SeqCst);
                 }
 
@@ -637,9 +651,8 @@ impl Local {
                     // Defers to destroy the old summary with a "fake" guard, and returns the new
                     // status.
                     if !old_status.is_null() {
-                        let guard = Guard { local: self };
+                        let guard = ManuallyDrop::new(Guard { local: self });
                         guard.defer_destroy(old_status);
-                        mem::forget(guard);
                     }
                 }
             }
@@ -775,8 +788,9 @@ impl Local {
         // Temporarily increment handle count. This is required so that the following call to `pin`
         // doesn't call `finalize` again.
         self.handle_count.set(1);
-        let guard = Guard { local: self };
         {
+            let guard = ManuallyDrop::new(Guard { local: self });
+
             // Flushes the local garbages.
             self.flush(&guard);
 
@@ -798,7 +812,6 @@ impl Local {
             }
         }
         // Revert the handle count back to zero.
-        mem::forget(guard);
         self.handle_count.set(0);
 
         unsafe {

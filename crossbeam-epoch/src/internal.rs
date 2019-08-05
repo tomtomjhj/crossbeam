@@ -530,10 +530,6 @@ impl Local {
                 !local_flags.is_pinned(),
                 "[Local::pin()] `self` should be unpinned"
             );
-            debug_assert!(
-                !local_flags.is_ejecting(),
-                "[Local::pin()] `self` should be unejecting"
-            );
 
             // Now we must store the new status into `self.status` and execute a `SeqCst` fence.
             // The fence makes sure that any future loads from `Atomic`s will not happen before this
@@ -630,13 +626,8 @@ impl Local {
                 let status = self.status.load(Ordering::Acquire, guard);
                 let flags = StatusFlags::from_bits_truncate(status.tag());
 
-                // If `self` is already unpinned, reuse the bloom filter.
-                if !flags.is_pinned() {
-                    debug_assert!(flags.is_ejecting());
-                    let flags = flags & !StatusFlags::EJECTING;
-                    self.status.store(status.with_tag(flags.bits()), Ordering::Release);
-                }
-                else {
+                // Update status only if `self` is not already unpinned.
+                if flags.is_pinned() {
                     // Creates a summary of the set of hazard pointers.
                     let new_status = repeat_iter(|| self.hazards.make_summary(true, guard))
                         // `ShieldError` is impossible with the `unprotected()` guard.
@@ -735,6 +726,9 @@ impl Local {
         // Heavy fence to synchronize with `Self::get_epoch()`.
         unsafe { membarrier::heavy_membarrier(); }
 
+        // Protects the current status to prevent the ABA problem.
+        let shield = Shield::new(status, guard)?;
+
         // Now `self` is pinned at an epoch less than `target_epoch`, and it's marked as being
         // ejected. Finishes ejecting `self`.
         let flags = StatusFlags::from_bits_truncate(status.tag());
@@ -746,9 +740,6 @@ impl Local {
             flags.is_ejecting(),
             "[Local::help_eject()] `self` should be ejecting"
         );
-
-        // Protects the current status to prevent the ABA problem.
-        let shield = Shield::new(status, guard)?;
 
         // Creates a summary of the set of hazard pointers.
         let new_status = repeat_iter(|| self.hazards.make_summary(false, &guard))?
@@ -800,10 +791,6 @@ impl Local {
             debug_assert!(
                 !local_flags.is_pinned(),
                 "[Local::finalize()] `self` should be unpinned"
-            );
-            debug_assert!(
-                !local_flags.is_ejecting(),
-                "[Local::finalize()] `self` should be unejecting"
             );
             if !local_status.is_null() {
                 unsafe {

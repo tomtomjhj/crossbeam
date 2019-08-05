@@ -332,7 +332,7 @@ impl Global {
         while !self.collect_inner(global_status, guard)? {}
 
         // Protects the old global summary to prevent the ABA problem.
-        let shield = Shield::new(global_status, guard)?;
+        let _shield = Shield::new(global_status, guard)?;
 
         // All pinned participants were pinned in the current global epoch, and we have removed all
         // the old garbages. Now let's advance the global epoch. First, calculates the new global
@@ -354,7 +354,6 @@ impl Global {
             }
         }
 
-        drop(shield);
         Ok(())
     }
 }
@@ -736,7 +735,7 @@ impl Local {
         unsafe { membarrier::heavy_membarrier(); }
 
         // Protects the current status to prevent the ABA problem.
-        let shield = Shield::new(status, guard)?;
+        let _shield = Shield::new(status, guard)?;
 
         // Now `self` is pinned at an epoch less than `target_epoch`, and it's marked as being
         // ejected. Finishes ejecting `self`.
@@ -775,7 +774,6 @@ impl Local {
             },
         };
 
-        drop(shield);
         Ok(return_status)
     }
 

@@ -395,13 +395,22 @@ pub struct Local {
 impl Local {
     /// Number of pinnings after which a participant will execute some deferred functions from the
     /// global queue.
+    #[cfg(not(feature = "sanitize"))]
     const PINNINGS_BETWEEN_COLLECT: usize = 8;
+    #[cfg(feature = "sanitize")]
+    const PINNINGS_BETWEEN_COLLECT: usize = 2;
 
     /// Number of pinnings after which a participant will try to advance the global epoch.
+    #[cfg(not(feature = "sanitize"))]
     const PINNINGS_BETWEEN_TRY_ADVANCE: usize = 256;
+    #[cfg(feature = "sanitize")]
+    const PINNINGS_BETWEEN_TRY_ADVANCE: usize = 4;
 
-    /// Number of pinnings after which a participant will is_forcing to advance the global epoch.
+    /// Number of pinnings after which a participant will force to advance the global epoch.
+    #[cfg(not(feature = "sanitize"))]
     const PINNINGS_BETWEEN_FORCE_ADVANCE: usize = 128 * 256;
+    #[cfg(feature = "sanitize")]
+    const PINNINGS_BETWEEN_FORCE_ADVANCE: usize = 8;
 
     /// Registers a new `Local` in the provided `Global`.
     pub fn register(collector: &Collector) -> LocalHandle {

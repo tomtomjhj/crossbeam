@@ -38,7 +38,6 @@
 use core::cell::{Cell, UnsafeCell};
 use core::cmp;
 use core::mem::{self, ManuallyDrop};
-use core::num::Wrapping;
 use core::ptr;
 use core::sync::atomic::{self, Ordering};
 use core::ops::Deref;
@@ -382,10 +381,13 @@ pub struct Local {
     /// The number of active handles.
     handle_count: Cell<usize>,
 
+    prev_epoch: Cell<usize>,
+    epoch_count: Cell<usize>,
+
     /// Total number of pinnings performed.
     ///
     /// This is just an auxilliary counter that sometimes kicks off collection.
-    pin_count: Cell<Wrapping<usize>>,
+    pin_count: Cell<usize>,
 
     /// The set of hazard pointers.
     pub(crate) hazards: HazardSet,
@@ -395,7 +397,7 @@ impl Local {
     /// Number of pinnings after which a participant will execute some deferred functions from the
     /// global queue.
     #[cfg(not(feature = "sanitize"))]
-    const PINNINGS_BETWEEN_COLLECT: usize = 8;
+    const PINNINGS_BETWEEN_COLLECT: usize = 32;
     #[cfg(feature = "sanitize")]
     const PINNINGS_BETWEEN_COLLECT: usize = 2;
 
@@ -407,9 +409,11 @@ impl Local {
 
     /// Number of pinnings after which a participant will force to advance the global epoch.
     #[cfg(not(feature = "sanitize"))]
-    const PINNINGS_BETWEEN_FORCE_ADVANCE: usize = 128 * 256;
+    const PINNINGS_BETWEEN_FORCE_ADVANCE: usize = 16 * 256;
     #[cfg(feature = "sanitize")]
     const PINNINGS_BETWEEN_FORCE_ADVANCE: usize = 8;
+
+    const_assert_eq!(pinnings_between_try_force_advance; Local::PINNINGS_BETWEEN_FORCE_ADVANCE % Local::PINNINGS_BETWEEN_TRY_ADVANCE, 0);
 
     /// Registers a new `Local` in the provided `Global`.
     pub fn register(collector: &Collector) -> LocalHandle {
@@ -424,7 +428,9 @@ impl Local {
                 bag: UnsafeCell::new(Bag::new()),
                 guard_count: Cell::new(0),
                 handle_count: Cell::new(1),
-                pin_count: Cell::new(Wrapping(0)),
+                prev_epoch: Cell::new(0),
+                epoch_count: Cell::new(0),
+                pin_count: Cell::new(0),
             })
             .into_shared(unprotected());
             collector.global.locals.insert(local);
@@ -598,20 +604,29 @@ impl Local {
                 global_status = global_status_validation;
             }
 
-            // Increment the pin counter.
-            let pin_count = self.pin_count.get();
-            self.pin_count.set(pin_count + Wrapping(1));
+            // Increment the epoch counter.
+            let global_flags = StatusFlags::from_bits_truncate(global_status.tag());
+            let new_epoch = global_flags.epoch();
+            let epoch_count = if new_epoch == self.prev_epoch.get() {
+                let c = self.epoch_count.get().wrapping_add(1);
+                self.epoch_count.set(c);
+                c
+            } else {
+                self.prev_epoch.set(new_epoch);
+                1
+            };
+            self.epoch_count.set(epoch_count);
 
-            // After every `PINNINGS_BETWEEN_COLLECT` try advancing the global epoch.
-            if pin_count.0 % Self::PINNINGS_BETWEEN_TRY_ADVANCE == 0 {
-                let global_flags = StatusFlags::from_bits_truncate(global_status.tag());
-                let is_forcing = pin_count.0 % Self::PINNINGS_BETWEEN_FORCE_ADVANCE == 0;
-                let _ = self
-                    .global()
-                    .advance(global_flags.epoch(), is_forcing, &guard);
+            // Increment the pin counter.
+            let pin_count = self.pin_count.get().wrapping_add(1);
+            self.pin_count.set(pin_count);
+
+            if epoch_count % Self::PINNINGS_BETWEEN_TRY_ADVANCE == 0 {
+                let is_forcing = epoch_count % Self::PINNINGS_BETWEEN_FORCE_ADVANCE == 0;
+                let _ = self.global().advance(new_epoch, is_forcing, &guard);
             }
             // After every `PINNINGS_BETWEEN_COLLECT` try collecting some old garbage bags.
-            else if pin_count.0 % Self::PINNINGS_BETWEEN_COLLECT == 0 {
+            else if pin_count % Self::PINNINGS_BETWEEN_COLLECT == 0 {
                 let _ = self.global().collect_inner(global_status, &guard);
             }
         }

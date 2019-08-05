@@ -477,7 +477,7 @@ impl Local {
                 .status
                 .load(Ordering::Acquire, unsafe { unprotected() });
             let global_flags = StatusFlags::from_bits_truncate(global_status.tag());
-            global_flags.epoch()
+            global_flags.epoch().wrapping_sub(1)
         })
     }
 

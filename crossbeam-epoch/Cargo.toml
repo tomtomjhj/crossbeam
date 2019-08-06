@@ -27,12 +27,9 @@ cfg-if = "0.1.2"
 memoffset = "0.2"
 static_assertions = "0.3.2"
 bitflags = "1.0"
-# membarrier = { git = "https://github.com/jeehoonkang/membarrier-rs", branch = "pebr-benchmark" }
-membarrier = { git = "https://github.com/jeehoonkang/membarrier-rs", rev = "c5d6f1b176719008bbd1b6e1b338cba852d3cb8b" }
 
-[dependencies.murmur3]
-git = "https://github.com/jeehoonkang/murmur3.git"
-branch = "nostd"
+membarrier = { path = "./deps/membarrier-rs" }
+murmur3 = { path = "./deps/murmur3" }
 
 [dependencies.arrayvec]
 version = "0.4"

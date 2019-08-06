@@ -258,6 +258,9 @@ impl Global {
             return Ok(());
         }
 
+        // Collects all the old garbage bags.
+        while !self.collect_inner(global_status, guard)? {}
+
         atomic::fence(Ordering::SeqCst);
 
         let mut new_summary = BloomFilter::new();
@@ -327,16 +330,13 @@ impl Global {
             return Ok(());
         }
 
-        // Collects all the old garbage bags.
-        while !self.collect_inner(global_status, guard)? {}
-
         // Protects the old global summary to prevent the ABA problem.
         let _shield = Shield::new(global_status, guard)?;
 
         // All pinned participants were pinned in the current global epoch, and we have removed all
         // the old garbages. Now let's advance the global epoch. First, calculates the new global
         // status.
-        let new_flags = StatusFlags::new(false, false, global_flags.epoch().wrapping_add(1));
+        let new_flags = StatusFlags::new(false, false, epoch.wrapping_add(1));
         let new_status = Owned::new(CachePadded::new(new_summary)).with_tag(new_flags.bits());
 
         // Tries to replace the global status.
@@ -381,13 +381,14 @@ pub struct Local {
     /// The number of active handles.
     handle_count: Cell<usize>,
 
+    /// The previous epoch.
     prev_epoch: Cell<usize>,
-    epoch_count: Cell<usize>,
 
-    /// Total number of pinnings performed.
+    /// Total number of bags in this epoch.
     ///
     /// This is just an auxilliary counter that sometimes kicks off collection.
-    pin_count: Cell<usize>,
+    collect_count: Cell<usize>,
+    advance_count: Cell<usize>,
 
     /// The set of hazard pointers.
     pub(crate) hazards: HazardSet,
@@ -397,23 +398,23 @@ impl Local {
     /// Number of pinnings after which a participant will execute some deferred functions from the
     /// global queue.
     #[cfg(not(feature = "sanitize"))]
-    const PINNINGS_BETWEEN_COLLECT: usize = 32;
+    const COUNTS_BETWEEN_COLLECT: usize = 64;
     #[cfg(feature = "sanitize")]
-    const PINNINGS_BETWEEN_COLLECT: usize = 2;
+    const COUNTS_BETWEEN_COLLECT: usize = 2;
 
     /// Number of pinnings after which a participant will try to advance the global epoch.
     #[cfg(not(feature = "sanitize"))]
-    const PINNINGS_BETWEEN_TRY_ADVANCE: usize = 256;
+    const COUNTS_BETWEEN_TRY_ADVANCE: usize = 1024;
     #[cfg(feature = "sanitize")]
-    const PINNINGS_BETWEEN_TRY_ADVANCE: usize = 4;
+    const COUNTS_BETWEEN_TRY_ADVANCE: usize = 4;
 
     /// Number of pinnings after which a participant will force to advance the global epoch.
     #[cfg(not(feature = "sanitize"))]
-    const PINNINGS_BETWEEN_FORCE_ADVANCE: usize = 16 * 256;
+    const COUNTS_BETWEEN_FORCE_ADVANCE: usize = 16 * 1024;
     #[cfg(feature = "sanitize")]
-    const PINNINGS_BETWEEN_FORCE_ADVANCE: usize = 8;
+    const COUNTS_BETWEEN_FORCE_ADVANCE: usize = 8;
 
-    const_assert_eq!(pinnings_between_try_force_advance; Local::PINNINGS_BETWEEN_FORCE_ADVANCE % Local::PINNINGS_BETWEEN_TRY_ADVANCE, 0);
+    const_assert_eq!(pinnings_between_try_force_advance; Local::COUNTS_BETWEEN_FORCE_ADVANCE % Local::COUNTS_BETWEEN_TRY_ADVANCE, 0);
 
     /// Registers a new `Local` in the provided `Global`.
     pub fn register(collector: &Collector) -> LocalHandle {
@@ -429,8 +430,8 @@ impl Local {
                 guard_count: Cell::new(0),
                 handle_count: Cell::new(1),
                 prev_epoch: Cell::new(0),
-                epoch_count: Cell::new(0),
-                pin_count: Cell::new(0),
+                collect_count: Cell::new(0),
+                advance_count: Cell::new(0),
             })
             .into_shared(unprotected());
             collector.global.locals.insert(local);
@@ -495,6 +496,26 @@ impl Local {
         })
     }
 
+    // TODO: name
+    fn incr_counts(&self, is_forcing: bool, guard: &Guard) {
+        let collect_count = self.collect_count.get().wrapping_add(1);
+        self.collect_count.set(collect_count);
+
+        let advance_count = self.advance_count.get().wrapping_add(1);
+        self.advance_count.set(advance_count);
+
+        if advance_count % Self::COUNTS_BETWEEN_TRY_ADVANCE == 0 {
+            let local_status = self.status.load(Ordering::Acquire, guard);
+            let local_flags = StatusFlags::from_bits_truncate(local_status.tag());
+            let is_forcing = collect_count % Self::COUNTS_BETWEEN_FORCE_ADVANCE == 0;
+            let _ = self.global().advance(local_flags.epoch(), is_forcing, &guard);
+        }
+        // After every `COUNTS_BETWEEN_COLLECT` try collecting some old garbage bags.
+        else if is_forcing || collect_count % Self::COUNTS_BETWEEN_COLLECT == 0 {
+            let _ = self.global().collect(&guard);
+        }
+    }
+
     /// Adds `deferred` to the thread-local bag.
     ///
     /// # Safety
@@ -508,6 +529,8 @@ impl Local {
             self.global().push_bag(bag, epoch);
             garbage = g;
         }
+
+        self.incr_counts(false, guard);
     }
 
     pub fn flush(&self, guard: &Guard) {
@@ -518,7 +541,7 @@ impl Local {
             self.global().push_bag(bag, epoch);
         }
 
-        let _ = self.global().collect(guard);
+        self.incr_counts(true, guard);
     }
 
     /// Pins the `Local`.
@@ -608,30 +631,12 @@ impl Local {
                 global_status = global_status_validation;
             }
 
-            // Increment the epoch counter.
+            // Reset the garbage counter if epoch has advanced.
             let global_flags = StatusFlags::from_bits_truncate(global_status.tag());
             let new_epoch = global_flags.epoch();
-            let epoch_count = if new_epoch == self.prev_epoch.get() {
-                let c = self.epoch_count.get().wrapping_add(1);
-                self.epoch_count.set(c);
-                c
-            } else {
+            if new_epoch != self.prev_epoch.get() {
                 self.prev_epoch.set(new_epoch);
-                1
-            };
-            self.epoch_count.set(epoch_count);
-
-            // Increment the pin counter.
-            let pin_count = self.pin_count.get().wrapping_add(1);
-            self.pin_count.set(pin_count);
-
-            if epoch_count % Self::PINNINGS_BETWEEN_TRY_ADVANCE == 0 {
-                let is_forcing = epoch_count % Self::PINNINGS_BETWEEN_FORCE_ADVANCE == 0;
-                let _ = self.global().advance(new_epoch, is_forcing, &guard);
-            }
-            // After every `PINNINGS_BETWEEN_COLLECT` try collecting some old garbage bags.
-            else if pin_count % Self::PINNINGS_BETWEEN_COLLECT == 0 {
-                let _ = self.global().collect_inner(global_status, &guard);
+                self.advance_count.set(0);
             }
         }
 

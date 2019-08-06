@@ -575,6 +575,8 @@ impl Local {
                     {
                         local_status = e.current;
                         continue;
+                    } else {
+                        local_status = new_status;
                     }
 
                     // We add a compiler fence to make it less likely for LLVM to do something wrong
@@ -588,6 +590,8 @@ impl Local {
                     {
                         local_status = e.current;
                         continue;
+                    } else {
+                        local_status = new_status;
                     }
 
                     atomic::fence(Ordering::SeqCst);
@@ -652,8 +656,8 @@ impl Local {
                 // Update status only if `self` is not already unpinned.
                 if flags.is_pinned() {
                     // Creates a summary of the set of hazard pointers.
-                    let new_status = repeat_iter(|| self.hazards.make_summary(true, guard))
-                        // `ShieldError` is impossible with the `unprotected()` guard.
+                    let new_status = self.hazards.make_summary(true, guard)
+                        // `IterError` is impossible with the `unprotected()` guard.
                         .unwrap()
                         .map(|summary| Owned::new(CachePadded::new(summary)).into_shared(guard))
                         .unwrap_or_else(|| Shared::null())

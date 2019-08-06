@@ -223,9 +223,8 @@ impl HazardSet {
             }
         }
 
-        let new = HazardNode::new();
-        let index = new.acquire(data).unwrap();
         let new = Owned::new(HazardNode::new()).into_shared(guard);
+        let index = new.deref().acquire(data).unwrap();
         self.inner.insert(new);
         Ok((new.as_raw(), index))
     }

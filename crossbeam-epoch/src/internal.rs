@@ -404,13 +404,13 @@ impl Local {
 
     /// Number of pinnings after which a participant will try to advance the global epoch.
     #[cfg(not(feature = "sanitize"))]
-    const COUNTS_BETWEEN_TRY_ADVANCE: usize = 1024;
+    const COUNTS_BETWEEN_TRY_ADVANCE: usize = 128;
     #[cfg(feature = "sanitize")]
     const COUNTS_BETWEEN_TRY_ADVANCE: usize = 4;
 
     /// Number of pinnings after which a participant will force to advance the global epoch.
     #[cfg(not(feature = "sanitize"))]
-    const COUNTS_BETWEEN_FORCE_ADVANCE: usize = 16 * 1024;
+    const COUNTS_BETWEEN_FORCE_ADVANCE: usize = 16 * 128;
     #[cfg(feature = "sanitize")]
     const COUNTS_BETWEEN_FORCE_ADVANCE: usize = 8;
 
@@ -507,7 +507,7 @@ impl Local {
         if advance_count % Self::COUNTS_BETWEEN_TRY_ADVANCE == 0 {
             let local_status = self.status.load(Ordering::Acquire, guard);
             let local_flags = StatusFlags::from_bits_truncate(local_status.tag());
-            let is_forcing = collect_count % Self::COUNTS_BETWEEN_FORCE_ADVANCE == 0;
+            let is_forcing = advance_count % Self::COUNTS_BETWEEN_FORCE_ADVANCE == 0;
             let _ = self.global().advance(local_flags.epoch(), is_forcing, &guard);
         }
         // After every `COUNTS_BETWEEN_COLLECT` try collecting some old garbage bags.

@@ -191,10 +191,10 @@ impl Guard {
     where
         F: FnOnce() -> R,
     {
-        if let Some(local) = self.local.as_ref() {
-            local.defer(Deferred::new(move || drop(f())), self);
-        } else {
-            drop(f());
+        match self.local as usize {
+            0 => drop(f()),
+            1 => return,
+            _ => (*self.local).defer(Deferred::new(move || drop(f())), self),
         }
     }
 
@@ -526,4 +526,14 @@ pub unsafe fn unprotected() -> &'static Guard {
     // (consisting of a single pointer) have the same representation in memory.
     static UNPROTECTED: usize = 0;
     &*(&UNPROTECTED as *const _ as *const Guard)
+}
+
+/// Identical to [`unprotected`] but it won't execute the [`defer`]red function at all.
+///
+/// [`unprotected`]: fn.unprotected.html
+/// [`defer`]: struct.Guard.html#method.defer
+#[inline]
+pub unsafe fn leaking() -> &'static Guard {
+    static LEAKING: usize = 1;
+    &*(&LEAKING as *const _ as *const Guard)
 }

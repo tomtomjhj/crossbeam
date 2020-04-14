@@ -137,3 +137,14 @@ jobs:
     steps:
       - name: Mark the job as a failure
         run: exit 1
+
+  # Run loom tests.
+  loom:
+    name: loom
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - name: Install Rust
+        run: rustup update stable && rustup default stable
+      - name: loom
+        run: ./ci/crossbeam-epoch-loom.sh

@@ -41,6 +41,9 @@ cfg-if = "1"
 const_fn = "0.4"
 memoffset = "0.6"
 
+[target.'cfg(loom)'.dependencies]
+loom = "0.3.2"
+
 [dependencies.crossbeam-utils]
 version = "0.8"
 path = "../crossbeam-utils"

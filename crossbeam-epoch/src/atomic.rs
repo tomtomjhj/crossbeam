@@ -1,3 +1,4 @@
+use crate::concurrency::sync::atomic::AtomicUsize;
 use core::borrow::{Borrow, BorrowMut};
 use core::cmp;
 use core::fmt;
@@ -5,7 +6,7 @@ use core::marker::PhantomData;
 use core::mem::{self, MaybeUninit};
 use core::ops::{Deref, DerefMut};
 use core::slice;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::Ordering;
 
 use crate::alloc::alloc;
 use crate::alloc::boxed::Box;
@@ -326,7 +327,24 @@ impl<T: ?Sized + Pointable> Atomic<T> {
     ///
     /// let a = Atomic::<i32>::null();
     /// ```
+    #[cfg(loom)]
+    pub fn null() -> Atomic<T> {
+        Self {
+            data: AtomicUsize::new(0),
+            _marker: PhantomData,
+        }
+    }
+
+    /// Returns a new null atomic pointer.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crossbeam_epoch::Atomic;
+    ///
+    /// let a = Atomic::<i32>::null();
+    /// ```
+    #[cfg(not(loom))]
     #[const_fn(feature = "nightly")]
     pub const fn null() -> Atomic<T> {
         Self {
@@ -638,7 +656,14 @@ impl<T: ?Sized + Pointable> Atomic<T> {
     /// }
     /// ```
     pub unsafe fn into_owned(self) -> Owned<T> {
-        Owned::from_usize(self.data.into_inner())
+        #[cfg(loom)]
+        {
+            Owned::from_usize(self.data.unsync_load())
+        }
+        #[cfg(not(loom))]
+        {
+            Owned::from_usize(self.data.into_inner())
+        }
     }
 }
 
@@ -1358,7 +1383,7 @@ impl<T: ?Sized + Pointable> Default for Shared<'_, T> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(loom)))]
 mod tests {
     use super::Shared;
 

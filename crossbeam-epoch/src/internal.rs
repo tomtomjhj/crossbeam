@@ -377,13 +377,16 @@ pub struct Local {
 // https://github.com/crossbeam-rs/crossbeam/issues/551
 #[test]
 fn local_size() {
-    assert!(core::mem::size_of::<Local>() <= 2048, "An allocation of `Local` should be <= 2048 bytes.");
+    assert!(
+        core::mem::size_of::<Local>() <= 2048,
+        "An allocation of `Local` should be <= 2048 bytes."
+    );
 }
 
 impl Local {
     /// Number of pinnings after which a participant will execute some deferred functions from the
     /// global queue.
-    const PINNINGS_BETWEEN_COLLECT: usize = 128;
+    const PINNINGS_BETWEEN_COLLECT: usize = 1;
 
     /// Registers a new `Local` in the provided `Global`.
     pub fn register(collector: &Collector) -> LocalHandle {
@@ -464,33 +467,8 @@ impl Local {
             // Now we must store `new_epoch` into `self.epoch` and execute a `SeqCst` fence.
             // The fence makes sure that any future loads from `Atomic`s will not happen before
             // this store.
-            if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
-                // HACK(stjepang): On x86 architectures there are two different ways of executing
-                // a `SeqCst` fence.
-                //
-                // 1. `atomic::fence(SeqCst)`, which compiles into a `mfence` instruction.
-                // 2. `_.compare_and_swap(_, _, SeqCst)`, which compiles into a `lock cmpxchg`
-                //    instruction.
-                //
-                // Both instructions have the effect of a full barrier, but benchmarks have shown
-                // that the second one makes pinning faster in this particular case.  It is not
-                // clear that this is permitted by the C++ memory model (SC fences work very
-                // differently from SC accesses), but experimental evidence suggests that this
-                // works fine.  Using inline assembly would be a viable (and correct) alternative,
-                // but alas, that is not possible on stable Rust.
-                let current = Epoch::starting();
-                let previous = self
-                    .epoch
-                    .compare_and_swap(current, new_epoch, Ordering::SeqCst);
-                debug_assert_eq!(current, previous, "participant was expected to be unpinned");
-                // We add a compiler fence to make it less likely for LLVM to do something wrong
-                // here.  Formally, this is not enough to get rid of data races; practically,
-                // it should go a long way.
-                atomic::compiler_fence(Ordering::SeqCst);
-            } else {
-                self.epoch.store(new_epoch, Ordering::Relaxed);
-                atomic::fence(Ordering::SeqCst);
-            }
+            self.epoch.store(new_epoch, Ordering::Relaxed);
+            atomic::fence(Ordering::SeqCst);
 
             // Increment the pin counter.
             let count = self.pin_count.get();
@@ -619,7 +597,7 @@ impl IsElement<Local> for Local {
     }
 }
 
-#[cfg(all(test, not(loom)))]
+#[cfg(all(test, not(feature = "check-loom")))]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 

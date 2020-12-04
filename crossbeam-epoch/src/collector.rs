@@ -109,7 +109,7 @@ impl fmt::Debug for LocalHandle {
     }
 }
 
-#[cfg(all(test, not(loom)))]
+#[cfg(all(test, not(feature = "check-loom")))]
 mod tests {
     use std::mem;
     use std::sync::atomic::{AtomicUsize, Ordering};

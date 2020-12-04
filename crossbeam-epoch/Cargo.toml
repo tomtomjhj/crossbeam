@@ -18,6 +18,7 @@ categories = ["concurrency", "memory-management", "no-std"]
 
 [features]
 default = ["std"]
+check-loom = ["loom", "crossbeam-utils/check-loom"]
 
 # Enable to use APIs that require `std`.
 # This is enabled by default.
@@ -40,9 +41,7 @@ sanitize = [] # Makes it more likely to trigger any potential data races.
 cfg-if = "1"
 const_fn = "0.4"
 memoffset = "0.6"
-
-[target.'cfg(loom)'.dependencies]
-loom = "0.3.2"
+loom = { path = "../../loom", optional = true }
 
 [dependencies.crossbeam-utils]
 version = "0.8"

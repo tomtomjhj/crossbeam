@@ -11,6 +11,7 @@ use core::sync::atomic::Ordering;
 use crate::alloc::alloc;
 use crate::alloc::boxed::Box;
 use crate::guard::Guard;
+#[cfg(not(feature = "check-loom"))]
 use const_fn::const_fn;
 use crossbeam_utils::atomic::AtomicConsume;
 
@@ -327,7 +328,7 @@ impl<T: ?Sized + Pointable> Atomic<T> {
     ///
     /// let a = Atomic::<i32>::null();
     /// ```
-    #[cfg(loom)]
+    #[cfg(feature = "check-loom")]
     pub fn null() -> Atomic<T> {
         Self {
             data: AtomicUsize::new(0),
@@ -344,7 +345,7 @@ impl<T: ?Sized + Pointable> Atomic<T> {
     ///
     /// let a = Atomic::<i32>::null();
     /// ```
-    #[cfg(not(loom))]
+    #[cfg(not(feature = "check-loom"))]
     #[const_fn(feature = "nightly")]
     pub const fn null() -> Atomic<T> {
         Self {
@@ -656,11 +657,11 @@ impl<T: ?Sized + Pointable> Atomic<T> {
     /// }
     /// ```
     pub unsafe fn into_owned(self) -> Owned<T> {
-        #[cfg(loom)]
+        #[cfg(feature = "check-loom")]
         {
             Owned::from_usize(self.data.unsync_load())
         }
-        #[cfg(not(loom))]
+        #[cfg(not(feature = "check-loom"))]
         {
             Owned::from_usize(self.data.into_inner())
         }
@@ -1383,7 +1384,7 @@ impl<T: ?Sized + Pointable> Default for Shared<'_, T> {
     }
 }
 
-#[cfg(all(test, not(loom)))]
+#[cfg(all(test, not(feature = "check-loom")))]
 mod tests {
     use super::Shared;
 

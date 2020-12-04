@@ -207,7 +207,7 @@ impl<T> Drop for Queue<T> {
     }
 }
 
-#[cfg(all(test, not(loom)))]
+#[cfg(all(test, not(feature = "check-loom")))]
 mod test {
     use super::*;
     use crate::pin;

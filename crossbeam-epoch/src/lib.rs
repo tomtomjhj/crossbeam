@@ -64,7 +64,7 @@
 
 use cfg_if::cfg_if;
 
-#[cfg(loom)]
+#[cfg(feature = "check-loom")]
 #[allow(unused_imports, dead_code)]
 pub(crate) mod concurrency {
     pub(crate) mod cell {
@@ -75,16 +75,7 @@ pub(crate) mod concurrency {
             use core::sync::atomic::Ordering;
             pub(crate) use loom::sync::atomic::AtomicUsize;
             pub(crate) fn fence(ord: Ordering) {
-                if let Ordering::Acquire = ord {
-                } else {
-                    // FIXME: loom only supports acquire fences at the moment.
-                    // https://github.com/tokio-rs/loom/issues/117
-                    // let's at least not panic...
-                    // this may generate some false positives (`SeqCst` is stronger than `Acquire`
-                    // for example), and some false negatives (`Relaxed` is weaker than `Acquire`),
-                    // but it's the best we can do for the time being.
-                }
-                loom::sync::atomic::fence(Ordering::Acquire)
+                loom::sync::atomic::fence(ord)
             }
 
             // FIXME: loom does not support compiler_fence at the moment.
@@ -99,7 +90,7 @@ pub(crate) mod concurrency {
     pub(crate) use loom::lazy_static;
     pub(crate) use loom::thread_local;
 }
-#[cfg(not(loom))]
+#[cfg(not(feature = "check-loom"))]
 #[allow(unused_imports, dead_code)]
 pub(crate) mod concurrency {
     #[cfg(any(feature = "alloc", feature = "std"))]

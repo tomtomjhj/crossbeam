@@ -1,14 +1,15 @@
-#![cfg(loom)]
+#![cfg(feature = "check-loom")]
 
 use crossbeam_epoch as epoch;
 
 use epoch::*;
 use epoch::{Atomic, Owned};
+use loom::sync::atomic::AtomicUsize;
 use loom::sync::atomic::Ordering::{self, Acquire, Relaxed, Release};
-use loom::sync::Arc;
 use loom::thread::spawn;
 use std::mem::ManuallyDrop;
 use std::ptr;
+use std::sync::Arc;
 
 #[test]
 fn it_works() {
